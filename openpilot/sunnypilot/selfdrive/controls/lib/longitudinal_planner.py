@@ -8,7 +8,10 @@ See the LICENSE.md file in the root directory for more details.
 from openpilot.cereal import messaging, custom
 from opendbc.car import structs
 from openpilot.common.constants import CV
+from openpilot.common.params import Params, UnknownKeyName
+from openpilot.common.swaglog import cloudlog
 from openpilot.selfdrive.car.cruise import V_CRUISE_MAX
+from openpilot.selfdrive.controls.lib.longitudinal_mpc_lib.long_mpc import clip_t_follow_offset_pct
 from openpilot.sunnypilot.selfdrive.controls.lib.dec.dec import DynamicExperimentalController
 from openpilot.sunnypilot.selfdrive.controls.lib.e2e_alerts_helper import E2EAlertsHelper
 from openpilot.sunnypilot.selfdrive.controls.lib.smart_cruise_control.smart_cruise_control import SmartCruiseControl
@@ -35,6 +38,15 @@ class LongitudinalPlannerSP:
 
     self.output_v_target = 0.
     self.output_a_target = 0.
+
+    # Following distance offset, read once per drive (plannerd restarts on every onroad transition)
+    if CP.openpilotLongitudinalControl:
+      try:
+        mpc.t_follow_offset_pct = clip_t_follow_offset_pct(Params().get("SPFollowingTimeOffset", return_default=True))
+      except UnknownKeyName:
+        # params library built without the key: keep the stock gap rather than take plannerd down
+        cloudlog.exception("SPFollowingTimeOffset not registered, using 0")
+        mpc.t_follow_offset_pct = 0.
 
   def is_e2e(self, sm: messaging.SubMaster) -> bool:
     experimental_mode = sm['selfdriveState'].experimentalMode

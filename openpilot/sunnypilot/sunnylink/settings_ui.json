@@ -653,6 +653,27 @@
               ]
             },
             {
+              "key": "SPFollowingTimeOffset",
+              "widget": "option",
+              "needs_onroad_cycle": true,
+              "title": "Following Distance Offset",
+              "description": "Adjusts the gap to the car ahead in every driving personality, from -10% (closer) to +10% (further) in 2% steps. 0 is no change. With Experimental mode off, on Aggressive at 70 mph each 2% step is about 2.6 ft (10% is about 13 ft). In Experimental mode the driving model can keep its own gap, so the change may be smaller or not noticeable. Takes effect on the next drive.",
+              "min": -10,
+              "max": 10,
+              "step": 2,
+              "unit": "%",
+              "enablement": [
+                {
+                  "type": "offroad_only"
+                },
+                {
+                  "type": "capability",
+                  "field": "has_longitudinal_control",
+                  "equals": true
+                }
+              ]
+            },
+            {
               "key": "IntelligentCruiseButtonManagement",
               "widget": "toggle",
               "title": "Intelligent Cruise Button Management (ICBM) (Alpha)",

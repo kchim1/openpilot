@@ -78,6 +78,22 @@ def get_T_FOLLOW(personality=log.LongitudinalPersonality.standard):
   else:
     raise NotImplementedError("Longitudinal personality not supported")
 
+# Following distance offset limits, in percent of the personality's follow time.
+# Enforced here so no setting, sunnylink push or caller can scale the gap past them.
+T_FOLLOW_OFFSET_PCT_MIN = -10
+T_FOLLOW_OFFSET_PCT_MAX = 10
+
+
+def clip_t_follow_offset_pct(offset_pct):
+  try:
+    offset_pct = float(offset_pct)
+  except (TypeError, ValueError):
+    return 0.
+  if not np.isfinite(offset_pct):
+    return 0.
+  return float(np.clip(offset_pct, T_FOLLOW_OFFSET_PCT_MIN, T_FOLLOW_OFFSET_PCT_MAX))
+
+
 def get_stopped_equivalence_factor(v_lead):
   return (v_lead**2) / (2 * COMFORT_BRAKE)
 
@@ -217,6 +233,8 @@ class LongitudinalMpc:
     self.solver = AcadosOcpSolverCython(MODEL_NAME, ACADOS_SOLVER_TYPE, N)
     self.reset()
     self.source = LongitudinalPlanSource.cruise
+    # Following distance offset in percent, set by the sunnypilot planner at the start of a drive
+    self.t_follow_offset_pct = 0.
 
   def reset(self):
     self.solver.reset()
@@ -308,7 +326,8 @@ class LongitudinalMpc:
     return lead_xv
 
   def update(self, radarstate, personality=log.LongitudinalPersonality.standard):
-    t_follow = get_T_FOLLOW(personality)
+    # The offset also moves the danger zone (LEAD_DANGER_FACTOR * desired distance), as a personality change does
+    t_follow = get_T_FOLLOW(personality) * (1 + clip_t_follow_offset_pct(self.t_follow_offset_pct) / 100)
 
     lead_xv_0 = self.process_lead(radarstate.leadOne)
     lead_xv_1 = self.process_lead(radarstate.leadTwo)

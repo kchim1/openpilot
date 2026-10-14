@@ -281,6 +281,10 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     {"SpeedLimitPolicy", {PERSISTENT | BACKUP, INT, "3"}},
     {"SpeedLimitValueOffset", {PERSISTENT | BACKUP, INT, "0"}},
 
+    // Following distance offset: percent added to the personality's follow time, -10 to +10.
+    // Read by the sunnypilot longitudinal planner at the start of each drive.
+    {"SPFollowingTimeOffset", {PERSISTENT | BACKUP, INT, "0"}},
+
     // Smart Cruise Control
     {"MapTargetVelocities", {CLEAR_ON_ONROAD_TRANSITION, STRING}},
     {"SmartCruiseControlMap", {PERSISTENT | BACKUP, BOOL, "0"}},
