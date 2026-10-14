@@ -53,6 +53,14 @@ class TogglesLayoutMici(NavScroller):
                                                    "Set speed is a maximum, not a target.\n" +
                                                    "These are alpha features. Expect mistakes.\n" +
                                                    "The path colors show acceleration and braking.")
+    self._traffic_mode_toggle = BigParamControl("traffic mode", "TrafficMode",
+                                                description="Shorter gap for stop-and-go traffic.\n" +
+                                                            "About 0.5 s when nearly stopped, 1.0 s from 11 mph.\n" +
+                                                            "Stays at 1.0 s at every speed until turned off.\n" +
+                                                            "Ignores the following distance offset.\n" +
+                                                            "Hold the left thumb button 1 s to toggle.\n" +
+                                                            "Turns off at the end of every drive.")
+    self._traffic_mode = ui_state.traffic_mode
     is_metric_toggle = BigParamControl("use metric units", "IsMetric")
     ldw_toggle = BigParamControl("lane departure warnings", "IsLdwEnabled",
                                  description="Warn when you drift across a detected lane line.\n" +
@@ -73,6 +81,7 @@ class TogglesLayoutMici(NavScroller):
     self._scroller.add_widgets([
       self._personality_toggle,
       self._experimental_btn,
+      self._traffic_mode_toggle,
       is_metric_toggle,
       ldw_toggle,
       always_on_dm_toggle,
@@ -84,6 +93,7 @@ class TogglesLayoutMici(NavScroller):
     # Toggle lists
     self._refresh_toggles = (
       ("ExperimentalMode", self._experimental_btn),
+      ("TrafficMode", self._traffic_mode_toggle),
       ("IsMetric", is_metric_toggle),
       ("IsLdwEnabled", ldw_toggle),
       ("AlwaysOnDM", always_on_dm_toggle),
@@ -111,6 +121,11 @@ class TogglesLayoutMici(NavScroller):
         self._personality_toggle.set_value(self._personality_toggle._options[personality])
       ui_state.personality = personality
 
+    # mirror Traffic Mode changes made elsewhere while this page is open: steering wheel, sunnylink, end of drive
+    if ui_state.traffic_mode != self._traffic_mode:
+      self._traffic_mode = ui_state.traffic_mode
+      self._traffic_mode_toggle.set_checked(self._traffic_mode)
+
   def show_event(self):
     super().show_event()
     self._update_toggles()
@@ -123,11 +138,13 @@ class TogglesLayoutMici(NavScroller):
       if ui_state.has_longitudinal_control:
         self._experimental_btn.set_visible(True)
         self._personality_toggle.set_visible(True)
+        self._traffic_mode_toggle.set_visible(True)
       else:
         # no long for now
         self._experimental_btn.set_visible(False)
         self._experimental_btn.set_checked(False)
         self._personality_toggle.set_visible(False)
+        self._traffic_mode_toggle.set_visible(False)
         ui_state.params.remove("ExperimentalMode")
 
     # Refresh toggles from params to mirror external changes

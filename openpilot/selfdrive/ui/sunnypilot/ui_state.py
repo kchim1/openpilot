@@ -63,6 +63,7 @@ class UIStateSP:
     self.enforce_torque_control: bool = False
     self.custom_torque_params: bool = False
     self.torque_override_enabled: bool = False
+    self.traffic_mode: bool = False
     self._sp_initialized: bool = False
 
   def update(self) -> None:
@@ -178,6 +179,7 @@ class UIStateSP:
     self.torque_override_enabled = self.params.get_bool("TorqueParamsOverrideEnabled")
     self.torque_override_lat_accel_factor = float(self.params.get("TorqueParamsOverrideLatAccelFactor", return_default=True))
     self.torque_override_friction = float(self.params.get("TorqueParamsOverrideFriction", return_default=True))
+    self.traffic_mode = self.params.get_bool("TrafficMode")
     self.true_v_ego_ui = self.params.get_bool("TrueVEgoUI")
     self.turn_signals = self.params.get_bool("ShowTurnSignals")
     self.boot_offroad_mode = self.params.get("DeviceBootMode", return_default=True)

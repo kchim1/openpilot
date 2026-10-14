@@ -23,6 +23,9 @@ from openpilot.sunnypilot.models.helpers import get_active_bundle
 DecState = custom.LongitudinalPlanSP.DynamicExperimentalControl.DynamicExperimentalControlState
 LongitudinalPlanSource = custom.LongitudinalPlanSP.LongitudinalPlanSource
 
+# plannerd runs at 20 Hz: re-read TrafficMode every 0.25 s so it can be switched while driving
+TRAFFIC_MODE_READ_FRAMES = 5
+
 
 class LongitudinalPlannerSP:
   def __init__(self, CP: structs.CarParams, CP_SP: structs.CarParamsSP, mpc):
@@ -39,14 +42,35 @@ class LongitudinalPlannerSP:
     self.output_v_target = 0.
     self.output_a_target = 0.
 
+    self._mpc = mpc
+    self._params = Params()
+    self._traffic_mode_available = CP.openpilotLongitudinalControl
+    self._traffic_mode_frame = 0
+    self._traffic_mode_error_logged = False
+
     # Following distance offset, read once per drive (plannerd restarts on every onroad transition)
     if CP.openpilotLongitudinalControl:
       try:
-        mpc.t_follow_offset_pct = clip_t_follow_offset_pct(Params().get("SPFollowingTimeOffset", return_default=True))
+        mpc.t_follow_offset_pct = clip_t_follow_offset_pct(self._params.get("SPFollowingTimeOffset", return_default=True))
       except UnknownKeyName:
         # params library built without the key: keep the stock gap rather than take plannerd down
         cloudlog.exception("SPFollowingTimeOffset not registered, using 0")
         mpc.t_follow_offset_pct = 0.
+
+  def read_traffic_mode(self) -> bool:
+    try:
+      return self._params.get_bool("TrafficMode")
+    except Exception:
+      # params library built without the key, or a failed read: keep the normal gap rather than take plannerd down
+      if not self._traffic_mode_error_logged:
+        cloudlog.exception("TrafficMode read failed, treating it as off")
+        self._traffic_mode_error_logged = True
+      return False
+
+  def update_traffic_mode(self) -> None:
+    if self._traffic_mode_available and self._traffic_mode_frame % TRAFFIC_MODE_READ_FRAMES == 0:
+      self._mpc.traffic_mode = self.read_traffic_mode()
+    self._traffic_mode_frame += 1
 
   def is_e2e(self, sm: messaging.SubMaster) -> bool:
     experimental_mode = sm['selfdriveState'].experimentalMode
@@ -87,6 +111,7 @@ class LongitudinalPlannerSP:
 
   def update(self, sm: messaging.SubMaster) -> None:
     self.events_sp.clear()
+    self.update_traffic_mode()
     self.dec.update(sm)
     self.e2e_alerts_helper.update(sm, self.events_sp)
 
@@ -149,5 +174,12 @@ class LongitudinalPlannerSP:
     e2eAlerts = longitudinalPlanSP.e2eAlerts
     e2eAlerts.greenLightAlert = self.e2e_alerts_helper.green_light_alert
     e2eAlerts.leadDepartAlert = self.e2e_alerts_helper.lead_depart_alert
+
+    # Following distance: what the MPC used this frame
+    followDistance = longitudinalPlanSP.followDistance
+    followDistance.trafficMode = bool(self._mpc.traffic_mode)
+    followDistance.tFollow = float(self._mpc.t_follow)
+    followDistance.offsetPct = float(self._mpc.get_t_follow_offset_pct())
+    followDistance.jerkFactor = float(self._mpc.jerk_factor)
 
     pm.send('longitudinalPlanSP', plan_sp_send)
