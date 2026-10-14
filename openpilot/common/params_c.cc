@@ -23,6 +23,8 @@ struct ParamsHandle {
 namespace {
 thread_local char last_error[512] = {};
 thread_local std::string result;
+// params_keys_by_flag hands out many buffers at once, so they can't share `result`
+thread_local std::vector<std::string> keys_result;
 
 void set_error(const char *error) {
   snprintf(last_error, sizeof(last_error), "%s", error);
@@ -162,12 +164,12 @@ ParamsBuffer params_key_at(ParamsHandle *handle, size_t index) noexcept {
 
 size_t params_keys_by_flag(ParamsHandle *handle, uint32_t flag, ParamsBuffer *out, size_t out_size) noexcept {
   return translate_exceptions(size_t{0}, [&]() {
-    auto filtered = handle->params.allKeys(static_cast<ParamKeyFlag>(flag));
-    size_t count = std::min(filtered.size(), out_size);
+    keys_result = handle->params.allKeys(static_cast<ParamKeyFlag>(flag));
+    size_t count = std::min(keys_result.size(), out_size);
     for (size_t i = 0; i < count; i++) {
-      out[i] = return_string(filtered[i]);
+      out[i] = ParamsBuffer{keys_result[i].data(), keys_result[i].size()};
     }
-    return filtered.size();
+    return keys_result.size();
   });
 }
 
