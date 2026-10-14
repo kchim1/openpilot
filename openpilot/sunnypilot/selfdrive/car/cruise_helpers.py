@@ -8,6 +8,7 @@ See the LICENSE.md file in the root directory for more details.
 from openpilot.cereal import custom
 from opendbc.car.structs import car
 from opendbc.car import structs
+from opendbc.sunnypilot.car import TRAFFIC_MODE_BUTTON
 from openpilot.common.params import Params, UnknownKeyName
 
 ButtonType = car.CarState.ButtonEvent.Type
@@ -37,7 +38,7 @@ class CruiseHelper:
         # toggle experimental mode once on distance button hold
         self.update_experimental_mode(events, experimental_mode)
 
-      self.update_traffic_mode(events)
+      self.update_traffic_mode(CS, events)
 
   def update_button_frame_counts(self, CS) -> None:
     for button in self.button_frame_counts:
@@ -62,9 +63,14 @@ class CruiseHelper:
     except UnknownKeyName:
       return False
 
-  def update_traffic_mode(self, events) -> None:
-    # announce every change once, whatever made it: on-device settings or sunnylink
+  def update_traffic_mode(self, CS, events) -> None:
+    # announce every change once, whatever made it: steering wheel, on-device settings or sunnylink
     traffic_mode = self.traffic_mode  # one read: params_thread may update it at any time
     if traffic_mode != self._traffic_mode_prev:
       events.add(EventNameSP.trafficModeOn if traffic_mode else EventNameSP.trafficModeOff)
       self._traffic_mode_prev = traffic_mode
+
+    # one TRAFFIC_MODE_BUTTON event per toggle (Rivian: left thumb button held 1 s). Only flip the param, without
+    # blocking this 100 Hz loop: the alert above follows once params_thread reads the new value back
+    if any(be.type == TRAFFIC_MODE_BUTTON and not be.pressed for be in CS.buttonEvents):
+      self.params.put_bool("TrafficMode", not traffic_mode)

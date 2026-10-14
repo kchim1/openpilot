@@ -11,12 +11,17 @@ from opendbc.car import Bus, structs
 from opendbc.can.parser import CANParser
 from opendbc.car.common.conversions import Conversions as CV
 from opendbc.car.rivian.values import DBC
+from opendbc.sunnypilot.car import TRAFFIC_MODE_BUTTON
 from opendbc.sunnypilot.car.rivian.values import RivianFlagsSP
 
 ButtonType = structs.CarState.ButtonEvent.Type
 
 MAX_SET_SPEED = 85 * CV.MPH_TO_MS
 MIN_SET_SPEED = 20 * CV.MPH_TO_MS
+
+# Holding the set speed down button this long toggles Traffic Mode instead of lowering the set speed.
+# carState is updated at 100 Hz (card), so 100 frames is 1.0 s
+TRAFFIC_MODE_HOLD_FRAMES = 100
 
 
 class CarStateExt:
@@ -38,13 +43,16 @@ class CarStateExt:
 
     prev_increase_button = self.increase_button
     prev_decrease_button = self.decrease_button
+    prev_decrease_counter = self.decrease_counter
 
     if self.CP.openpilotLongitudinalControl:
+      button_events = []
+
       # distance scroll wheel
       right_scroll = cp_park.vl["WheelButtons_Fwd"]["RightButton_Scroll"]
       if right_scroll != 255:
         if self.distance_button != right_scroll:
-          ret.buttonEvents = [structs.CarState.ButtonEvent(pressed=False, type=ButtonType.gapAdjustCruise)]
+          button_events.append(structs.CarState.ButtonEvent(pressed=False, type=ButtonType.gapAdjustCruise))
         self.distance_button = right_scroll
 
       # button logic for set-speed
@@ -65,11 +73,13 @@ class CarStateExt:
         elif not prev_increase_button:
           self.set_speed += conversion
 
+      # set speed down: a tap lowers the set speed by 1 when it is released. Held for TRAFFIC_MODE_HOLD_FRAMES, it sends
+      # one Traffic Mode toggle when the hold is reached and leaves the set speed alone (no long press steps)
       if self.decrease_button:
-        if self.decrease_counter % 66 == 0:
-          self.set_speed = (int(math.floor((set_speed_converted - 1) / long_press_step)) * long_press_step) * conversion
-        elif not prev_decrease_button:
-          self.set_speed -= conversion
+        if self.decrease_counter == TRAFFIC_MODE_HOLD_FRAMES:
+          button_events.append(structs.CarState.ButtonEvent(pressed=False, type=TRAFFIC_MODE_BUTTON))
+      elif prev_decrease_button and prev_decrease_counter < TRAFFIC_MODE_HOLD_FRAMES:
+        self.set_speed -= conversion
 
       if not ret.cruiseState.enabled:
         self.set_speed = ret.vEgoCluster
@@ -82,6 +92,7 @@ class CarStateExt:
 
       self.set_speed = max(MIN_SET_SPEED, min(self.set_speed, MAX_SET_SPEED))
       ret.cruiseState.speed = self.set_speed
+      ret.buttonEvents = button_events
 
     if self.CP.enableBsm:
       ret.leftBlindspot = cp_park.vl["BSM_BlindSpotIndicator_Fwd"]["BSM_BlindSpotIndicator_Left"] != 0
