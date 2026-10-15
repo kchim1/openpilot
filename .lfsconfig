@@ -1,5 +1,5 @@
-# LFS objects (driving models, assets) are served from gerrylum's public repo, so this
-# private repo needs no LFS storage of its own. Repos in the commaai/openpilot fork
-# network share LFS objects and GitHub serves them anonymously for public repos.
+# LFS objects (driving models, assets) are served anonymously from sunnypilot's public repo, so
+# kchim1's repos need no LFS storage of their own. gerrylum's endpoint lacks some objects this tree
+# references (big_driving_tinygrad.pkl, icons_mici/sunnylink.png); sunnypilot/sunnypilot has all of them.
 [lfs]
-	url = https://github.com/gerrylum/openpilot.git/info/lfs
+	url = https://github.com/sunnypilot/sunnypilot.git/info/lfs
