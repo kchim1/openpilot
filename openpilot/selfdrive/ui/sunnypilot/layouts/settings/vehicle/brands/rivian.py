@@ -9,10 +9,12 @@ from openpilot.selfdrive.ui.ui_state import ui_state
 from openpilot.system.ui.lib.multilang import tr, tr_noop
 from openpilot.system.ui.sunnypilot.widgets.list_view import toggle_item_sp
 
-LAUNCH_ASSIST_DESCRIPTION = tr_noop("Starts the truck moving sooner when the car ahead pulls away from a stop. After a radar lead has been " +
-                                    "stopped ahead for a second and then starts moving away, sunnypilot briefly requests 0.5 m/s^2 " +
-                                    "(at most 0.7 s) to get past the truck's standstill dead zone, then eases back to the normal plan. " +
-                                    "Once moving it accelerates as before. Can be changed while driving.")
+LAUNCH_ASSIST_DESCRIPTION = tr_noop("Starts the truck moving sooner when the car ahead pulls away from a stop. Once the truck has been " +
+                                    "stopped behind a radar-tracked car for a second and that car starts moving away, sunnypilot briefly " +
+                                    "raises its request to 0.5 m/s^2 (under a second, ending sooner once the truck matches the car's speed) " +
+                                    "to get past the truck's standstill dead zone, then eases back to the normal plan. Once moving it " +
+                                    "accelerates as before. Because it starts sooner, the truck may also follow a car that only inches " +
+                                    "forward and stops. Can be changed while driving.")
 
 
 class RivianSettings(BrandSettings):

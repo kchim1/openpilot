@@ -14,15 +14,17 @@ from openpilot.common.parameterized import parameterized
 from openpilot.common.test import OpenpilotTestCase
 from openpilot.common.realtime import DT_CTRL
 from openpilot.selfdrive.controls.lib.longitudinal_mpc_lib.long_mpc import LongitudinalMpc, LAUNCH_ASSIST_A_LEAD_TAU, MIN_X_LEAD_FACTOR, \
-  ACCEL_MIN
+  ACCEL_MIN, LAUNCH_ASSIST_V_LEAD_K_MIN
 from openpilot.sunnypilot.selfdrive.controls.lib.longitudinal_planner import LongitudinalPlannerSP, LAUNCH_ASSIST_READ_FRAMES
 from openpilot.sunnypilot.selfdrive.controls.lib import launch_assist as la_mod
 from openpilot.sunnypilot.selfdrive.controls.lib.launch_assist import LaunchAssist, LaunchAssistState, LongCtrlState, \
-  ARM_STANDSTILL_T, LAUNCH_ACCEL, LAUNCH_MAX_T, LAUNCH_V_END, FADE_RATE, PARAM_READ_FRAMES
+  ARM_STANDSTILL_T, LAUNCH_ACCEL, LAUNCH_RAMP_RATE, LAUNCH_MAX_T, LAUNCH_V_END, FADE_RATE, PARAM_READ_FRAMES
 
 LIMITS = (-3.5, 2.0)
 ARM_FRAMES = int(round(ARM_STANDSTILL_T / DT_CTRL))
 FIRE_FRAMES = int(round(LAUNCH_MAX_T / DT_CTRL))
+RAMP_STEP = LAUNCH_RAMP_RATE * DT_CTRL
+RAMP_FRAMES = int(np.ceil((LAUNCH_ACCEL - 0.1) / RAMP_STEP - 1e-9))  # fire frame included, from the default 0.1 output
 
 
 class FakeParams:
@@ -36,16 +38,16 @@ class FakeParams:
     return self.value
 
 
-def cs(standstill=True, v_raw=0., brake=False):
-  return SimpleNamespace(standstill=standstill, vEgoRaw=v_raw, brakePressed=brake)
+def cs(standstill=True, v_raw=0., brake=False, v_ego=None):
+  return SimpleNamespace(standstill=standstill, vEgoRaw=v_raw, vEgo=v_raw if v_ego is None else v_ego, brakePressed=brake)
 
 
-def lead(present=True, radar=True, v_lead_k=0., v_lead=0., a_lead_k=0., d_rel=6.8):
-  return SimpleNamespace(present=present, radar=radar, vLeadK=v_lead_k, vLead=v_lead, aLeadK=a_lead_k, dRel=d_rel)
+def lead(present=True, radar=True, v_lead_k=0., v_lead=0., a_lead_k=0., d_rel=6.8, track_id=1):
+  return SimpleNamespace(present=present, radar=radar, vLeadK=v_lead_k, vLead=v_lead, aLeadK=a_lead_k, dRel=d_rel, radarTrackId=track_id)
 
 
 STOPPED = lead()
-DEPARTING = lead(v_lead_k=0.3, v_lead=0.4, a_lead_k=0.4)
+DEPARTING = lead(v_lead_k=0.5, v_lead=0.6, a_lead_k=0.4)
 
 
 class Driver:
@@ -88,7 +90,8 @@ class TestLaunchAssistArm(OpenpilotTestCase):
     # long-gap stop: the planner released before the lead moved
     d = Driver()
     d.arm(state=LongCtrlState.pid)
-    assert d.step(ld=DEPARTING) == LAUNCH_ACCEL
+    self.assertAlmostEqual(d.step(ld=DEPARTING), 0.1 + RAMP_STEP)
+    assert d.la.state == LaunchAssistState.firing
 
   @parameterized.expand([(lead(radar=False),), (lead(present=False),)])
   def test_no_arm_without_radar_lead(self, ld):
@@ -119,6 +122,28 @@ class TestLaunchAssistArm(OpenpilotTestCase):
     assert d.la.state == LaunchAssistState.armed
 
 
+  def test_new_track_disarms_and_rearms_after_another_second(self):
+    # a different radar track: its first vLeadK is unfiltered, and it is not the car we were stopped behind
+    d = Driver()
+    d.arm(state=LongCtrlState.pid)
+    new_departing = lead(v_lead_k=0.5, v_lead=0.6, a_lead_k=0.4, d_rel=25., track_id=2)
+    assert d.step(ld=new_departing) == 0.1
+    assert d.la.state == LaunchAssistState.idle
+    d.steps(ARM_FRAMES - 1, ld=lead(track_id=2))
+    assert d.la.state == LaunchAssistState.idle
+    d.step(ld=lead(track_id=2))
+    assert d.la.state == LaunchAssistState.armed
+    assert d.step(ld=new_departing) > 0.1
+
+  def test_track_change_restarts_the_second(self):
+    d = Driver()
+    d.steps(ARM_FRAMES - 10)
+    d.steps(ARM_FRAMES - 1, ld=lead(track_id=2))
+    assert d.la.state == LaunchAssistState.idle
+    d.step(ld=lead(track_id=2))
+    assert d.la.state == LaunchAssistState.armed
+
+
 class TestLaunchAssistFire(OpenpilotTestCase):
   def test_no_fire_without_departing_lead(self):
     d = Driver()
@@ -133,7 +158,7 @@ class TestLaunchAssistFire(OpenpilotTestCase):
     d.arm(state=LongCtrlState.pid)
     for ld in (lead(v_lead_k=1.0, v_lead=0.3, a_lead_k=0.5), lead(v_lead_k=1.0, v_lead=0.5, a_lead_k=0.1)):
       assert d.step(ld=ld) == 0.1
-    assert d.step(ld=lead(v_lead_k=0., v_lead=0.31, a_lead_k=0.11)) == LAUNCH_ACCEL
+    self.assertAlmostEqual(d.step(ld=lead(v_lead_k=0.2, v_lead=0.31, a_lead_k=0.11)), 0.1 + RAMP_STEP)
 
   @parameterized.expand([(LongCtrlState.stopping, True), (LongCtrlState.stopping, False), (LongCtrlState.off, False), (LongCtrlState.pid, True)])
   def test_no_fire_while_stopping_or_should_stop(self, state, should_stop):
@@ -159,13 +184,16 @@ class TestLaunchAssistFire(OpenpilotTestCase):
     assert d.fire(accel=0.8) == 0.8
     assert d.steps(FIRE_FRAMES, accel=0.9, ld=DEPARTING) == [0.9] * FIRE_FRAMES
 
-  def test_floor_duration_and_fade(self):
+  def test_floor_ramp_duration_and_fade(self):
     d = Driver()
     outs = [d.fire(accel=0.1)] + d.steps(400, accel=0.1, ld=DEPARTING)
     outs = np.array(outs)
-    # full floor for LAUNCH_MAX_T, then down at FADE_RATE until the normal output, then the normal output
-    n_full = int(np.sum(outs == LAUNCH_ACCEL))
-    assert n_full == FIRE_FRAMES
+    # up from the normal output at LAUNCH_RAMP_RATE, full floor until LAUNCH_MAX_T after the fire, then down at FADE_RATE
+    # until the normal output, then the normal output
+    assert np.allclose(np.diff(np.concatenate(([0.1], outs[:RAMP_FRAMES - 1]))), RAMP_STEP)
+    assert outs[RAMP_FRAMES - 2] < LAUNCH_ACCEL - 1e-6 and np.allclose(outs[RAMP_FRAMES - 1:FIRE_FRAMES], LAUNCH_ACCEL)
+    n_full = FIRE_FRAMES
+    assert outs[n_full] < LAUNCH_ACCEL
     fade = outs[n_full:]
     fade = fade[fade > 0.1]
     assert len(fade) > 0 and np.allclose(np.diff(np.concatenate(([LAUNCH_ACCEL], fade))), -FADE_RATE * DT_CTRL)
@@ -176,11 +204,37 @@ class TestLaunchAssistFire(OpenpilotTestCase):
   def test_moving_starts_fade_early(self):
     d = Driver()
     d.fire()
-    d.steps(10, ld=DEPARTING)
+    d.steps(RAMP_FRAMES, ld=DEPARTING)
     out = d.step(ld=DEPARTING, CS=cs(standstill=False, v_raw=LAUNCH_V_END + 0.01))
     assert d.la.state == LaunchAssistState.fading
     assert out == LAUNCH_ACCEL
     self.assertAlmostEqual(d.step(ld=DEPARTING, CS=cs(standstill=False, v_raw=0.3)), LAUNCH_ACCEL - FADE_RATE * DT_CTRL)
+
+  def test_ramp_from_normal_output(self):
+    # the floor starts at LongControl's output, so the command never steps
+    for accel in (-0.2, 0., 0.3):
+      d = Driver()
+      outs = [d.fire(accel=accel)] + d.steps(FIRE_FRAMES - 1, accel=accel, ld=DEPARTING)
+      steps = np.diff(np.concatenate(([accel], outs)))
+      assert (steps >= 0.).all() and (steps <= RAMP_STEP + 1e-9).all()
+      assert outs[-1] == LAUNCH_ACCEL
+
+  @parameterized.expand([(False,), (True,)])
+  def test_ends_once_as_fast_as_lead(self, fading):
+    # lead inching or crawling: stop adding speed once ego has caught up with it
+    d = Driver()
+    d.fire()
+    if fading:
+      d.steps(FIRE_FRAMES, ld=DEPARTING)
+      assert d.la.state == LaunchAssistState.fading
+    else:
+      d.steps(5, ld=DEPARTING)
+    slow = lead(v_lead_k=0.2, v_lead=0.2)
+    assert d.step(accel=0.1, ld=slow, CS=cs(standstill=False, v_raw=0.15, v_ego=0.19)) > 0.1
+    assert d.step(accel=0.1, ld=slow, CS=cs(standstill=False, v_raw=0.2, v_ego=0.2)) == 0.1
+    assert d.la.state == LaunchAssistState.idle
+    # and does not come back while moving
+    assert d.steps(100, accel=0.1, ld=DEPARTING, CS=cs(standstill=False, v_raw=0.2)) == [0.1] * 100
 
   def test_fade_ends_when_normal_output_catches_up(self):
     d = Driver()
@@ -192,9 +246,11 @@ class TestLaunchAssistFire(OpenpilotTestCase):
 
   def test_clipped_to_limits(self):
     d = Driver()
-    assert d.fire(accel=0.1, limits=(-3.5, 0.3)) == 0.3
+    outs = [d.fire(accel=0.1, limits=(-3.5, 0.3))] + d.steps(FIRE_FRAMES - 1, accel=0.1, ld=DEPARTING, limits=(-3.5, 0.3))
+    assert max(outs) == 0.3 and outs[-1] == 0.3
     d = Driver()
-    assert d.fire(accel=-1.0, limits=(-1.0, 1.0)) == LAUNCH_ACCEL
+    d.fire(accel=-1.0, limits=(-1.0, 1.0))
+    assert d.steps(FIRE_FRAMES - 1, accel=-1.0, ld=DEPARTING, limits=(-1.0, 1.0))[-1] == LAUNCH_ACCEL
 
 
 CANCELS = [
@@ -240,7 +296,8 @@ class TestLaunchAssistCancel(OpenpilotTestCase):
     # moved, then a new standstill: one more kick after another second
     d.step(CS=cs(standstill=False, v_raw=0.5))
     d.arm()
-    assert d.step(ld=DEPARTING) == LAUNCH_ACCEL
+    self.assertAlmostEqual(d.step(ld=DEPARTING), 0.1 + RAMP_STEP)
+    assert d.la.state == LaunchAssistState.firing
 
 
 class TestLaunchAssistToggle(OpenpilotTestCase):
@@ -281,8 +338,8 @@ class TestLaunchAssistToggle(OpenpilotTestCase):
     assert not LaunchAssist(params).read_param()
 
 
-def mpc_lead(radar=True, v_lead=0.5, a_lead_k=0.5, a_lead_tau=1.5, d_rel=6.8):
-  return SimpleNamespace(present=True, radar=radar, dRel=d_rel, vLead=v_lead, aLeadK=a_lead_k, aLeadTau=a_lead_tau)
+def mpc_lead(radar=True, v_lead=0.5, v_lead_k=0.4, a_lead_k=0.5, a_lead_tau=1.5, d_rel=6.8):
+  return SimpleNamespace(present=True, radar=radar, dRel=d_rel, vLead=v_lead, vLeadK=v_lead_k, aLeadK=a_lead_k, aLeadTau=a_lead_tau)
 
 
 class TestLaunchAssistMpc(OpenpilotTestCase):
@@ -299,7 +356,7 @@ class TestLaunchAssistMpc(OpenpilotTestCase):
 
   def test_departing_radar_lead_keeps_accelerating(self):
     for v_ego in (0., 0.5, 0.99):
-      for lead in (mpc_lead(), mpc_lead(v_lead=0.31, a_lead_k=0.11), mpc_lead(v_lead=2., a_lead_k=1.5, a_lead_tau=0.8)):
+      for lead in (mpc_lead(), mpc_lead(v_lead=0.31, v_lead_k=0.16, a_lead_k=0.11), mpc_lead(v_lead=2., v_lead_k=1.8, a_lead_k=1.5, a_lead_tau=0.8)):
         xv = self.lead_xv(lead, v_ego, True)
         assert np.array_equal(xv, self.expected(lead, LAUNCH_ASSIST_A_LEAD_TAU))
         # the lead is predicted further ahead than with radard's tau
@@ -313,6 +370,8 @@ class TestLaunchAssistMpc(OpenpilotTestCase):
     cases = [
       (mpc_lead(radar=False), 0.),               # vision-only lead
       (mpc_lead(v_lead=0.3), 0.),                # lead not moving away fast enough
+      (mpc_lead(v_lead_k=LAUNCH_ASSIST_V_LEAD_K_MIN), 0.),  # only a raw vLead sample moving (noise)
+      (mpc_lead(v_lead=0.6, v_lead_k=0.09, a_lead_k=0.21), 0.),
       (mpc_lead(a_lead_k=0.1), 0.),              # lead not accelerating
       (mpc_lead(a_lead_k=-0.5), 0.),
       (mpc_lead(), 1.0),                         # ego already moving
@@ -326,7 +385,8 @@ class TestLaunchAssistMpc(OpenpilotTestCase):
   def test_off_is_identical(self):
     rng = np.random.default_rng(0)
     for _ in range(500):
-      lead = mpc_lead(radar=bool(rng.integers(2)), v_lead=float(rng.uniform(0, 3)), a_lead_k=float(rng.uniform(-2, 2)),
+      lead = mpc_lead(radar=bool(rng.integers(2)), v_lead=float(rng.uniform(0, 3)), v_lead_k=float(rng.uniform(0, 3)),
+                      a_lead_k=float(rng.uniform(-2, 2)),
                       a_lead_tau=float(rng.uniform(0, 1.5)), d_rel=float(rng.uniform(4, 30)))
       v_ego = float(rng.uniform(0, 3))
       self.mpc.set_cur_state(v_ego, 0.)

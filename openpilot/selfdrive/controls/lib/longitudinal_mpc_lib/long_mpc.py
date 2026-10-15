@@ -105,10 +105,11 @@ TRAFFIC_MODE_JERK_FACTOR = 0.5  # same as Aggressive
 def get_traffic_mode_T_FOLLOW(v_ego):
   return float(np.interp(v_ego, TRAFFIC_MODE_T_FOLLOW_BP, TRAFFIC_MODE_T_FOLLOW_V))
 
-# Rivian Launch Assist, set by the sunnypilot planner: while nearly stopped, a radar lead that is pulling away
-# keeps its acceleration longer in the prediction (smaller aLeadTau), so the plan starts following sooner.
+# Rivian Launch Assist, set by the sunnypilot planner: while the planned speed is nearly zero, a radar lead that is
+# pulling away keeps its acceleration longer in the prediction (smaller aLeadTau), so the plan starts following sooner.
 LAUNCH_ASSIST_V_EGO_MAX = 1.0
 LAUNCH_ASSIST_V_LEAD_MIN = 0.3
+LAUNCH_ASSIST_V_LEAD_K_MIN = 0.15  # filtered speed too, so one noisy raw vLead sample can't trigger it
 LAUNCH_ASSIST_A_LEAD_MIN = 0.1
 LAUNCH_ASSIST_A_LEAD_TAU = 0.3
 
@@ -336,8 +337,8 @@ class LongitudinalMpc:
       v_lead = lead.vLead
       a_lead = lead.aLeadK
       a_lead_tau = lead.aLeadTau
-      if self.launch_assist and lead.radar and v_ego < LAUNCH_ASSIST_V_EGO_MAX and \
-         v_lead > LAUNCH_ASSIST_V_LEAD_MIN and a_lead > LAUNCH_ASSIST_A_LEAD_MIN:
+      if self.launch_assist and lead.radar and v_ego < LAUNCH_ASSIST_V_EGO_MAX and v_lead > LAUNCH_ASSIST_V_LEAD_MIN and \
+         lead.vLeadK > LAUNCH_ASSIST_V_LEAD_K_MIN and a_lead > LAUNCH_ASSIST_A_LEAD_MIN:
         a_lead_tau = min(a_lead_tau, LAUNCH_ASSIST_A_LEAD_TAU)
     else:
       # Fake a fast lead car, so mpc can keep running in the same mode

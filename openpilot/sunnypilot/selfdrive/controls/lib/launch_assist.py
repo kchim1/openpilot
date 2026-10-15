@@ -17,11 +17,14 @@ LongCtrlState = car.CarControl.Actuators.LongControlState
 # following. When a stopped radar lead measurably pulls away, hold a short floor above that dead zone.
 ARM_STANDSTILL_T = 1.0      # s stopped behind a radar lead before a launch may be assisted
 LAUNCH_ACCEL = 0.5          # m/s^2 floor while firing
-LAUNCH_MAX_T = 0.7          # s at most at the full floor
+LAUNCH_RAMP_RATE = 5.0      # m/s^3 floor rise from the normal output to LAUNCH_ACCEL (~0.1 s), not a one-frame step
+LAUNCH_MAX_T = 0.7          # s at most from the fire to the fade
 LAUNCH_V_END = 0.15         # m/s vEgoRaw: moving, start the fade (ESP speed reads 0 below ~0.125)
-FADE_RATE = 0.75            # m/s^3 floor fade back to the normal output, avoids a drop back into the dead zone
+FADE_RATE = 0.75            # m/s^3 floor fade back to the normal output, rather than dropping at once
 
-# Departing-lead gate. Standstill radar noise measured std <= 0.05 m/s on vLead, |aLeadK| <= 0.12
+# Departing-lead gate. Standstill radar noise measured std <= 0.05 m/s on vLead, |aLeadK| <= 0.12; vLeadK of a stationary
+# lead stays <= 0.02 in real Rivian logs. A higher threshold delays real launches (real logs: lead start to gate median
+# 0.45 s at 0.15, 0.60 s at 0.2)
 LEAD_DEPART_V_K = 0.15      # primary: radarState.leadOne.vLeadK above this
 LEAD_DEPART_ALT_V = 0.3     # alternative: vLead above this and aLeadK above LEAD_DEPART_ALT_A
 LEAD_DEPART_ALT_A = 0.1
@@ -57,7 +60,8 @@ class LaunchAssist:
     self._error_logged = False
 
     self.state = LaunchAssistState.idle
-    self.standstill_frames = 0  # stopped behind a radar lead with a launch qualifying
+    self.standstill_frames = 0  # stopped behind the same radar lead with a launch qualifying
+    self.lead_id = -1
     self.spent = False          # fired during this standstill
     self.fire_frames = 0
     self.floor = 0.
@@ -95,8 +99,11 @@ class LaunchAssist:
     released = long_control_state == LongCtrlState.pid and not should_stop and a_target >= 0.
     usable = self.enabled and long_active and not CS.brakePressed and radar_lead
 
+    # a new radar track restarts the second (its first vLeadK is unfiltered)
+    same_lead = lead.radarTrackId == self.lead_id
+    self.lead_id = lead.radarTrackId
     if CS.standstill:
-      self.standstill_frames = self.standstill_frames + 1 if usable else 0
+      self.standstill_frames = (self.standstill_frames + 1 if same_lead else 1) if usable else 0
     else:
       self.standstill_frames = 0
       self.spent = False
@@ -107,9 +114,13 @@ class LaunchAssist:
                        radar_lead=radar_lead, long_control_state=int(long_control_state), should_stop=bool(should_stop),
                        a_target=float(a_target), fire_frames=self.fire_frames)
         self.reset()
+      elif CS.vEgo >= lead.vLeadK:
+        # already as fast as the lead: more would only close the gap (lead inching or crawling, then stopping)
+        self.reset()
 
     elif self.state == LaunchAssistState.armed:
-      if not (usable and CS.standstill):
+      if self.standstill_frames < ARM_FRAMES:
+        # moved, lead lost or changed, not engaged, braking
         self.reset()
       elif released and lead_departing(lead):
         cloudlog.event("launch assist fire", v_lead_k=float(lead.vLeadK), v_lead=float(lead.vLead), a_lead_k=float(lead.aLeadK),
@@ -117,7 +128,7 @@ class LaunchAssist:
         self.state = LaunchAssistState.firing
         self.spent = True
         self.fire_frames = 0
-        self.floor = LAUNCH_ACCEL
+        self.floor = accel
 
     elif self.state == LaunchAssistState.idle:
       # arms in stopping or, after a long-gap stop the planner already released, in pid
@@ -125,6 +136,7 @@ class LaunchAssist:
         self.state = LaunchAssistState.armed
 
     if self.state == LaunchAssistState.firing:
+      self.floor = min(self.floor + LAUNCH_RAMP_RATE * DT_CTRL, LAUNCH_ACCEL)
       self.fire_frames += 1
       if self.fire_frames >= LAUNCH_MAX_FRAMES or CS.vEgoRaw > LAUNCH_V_END:
         self.state = LaunchAssistState.fading

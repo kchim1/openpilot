@@ -69,10 +69,10 @@ class TogglesLayoutMici(NavScroller):
     try:
       self._launch_assist_toggle = BigParamControl("launch assist", "RivianLaunchAssist",
                                                    description="Starts moving sooner when the stopped car ahead pulls away.\n" +
-                                                               "Briefly requests 0.5 m/s^2 (at most 0.7 s)\n" +
-                                                               "to get past the truck's standstill dead zone,\n" +
-                                                               "then eases back to the normal plan.\n" +
+                                                               "Briefly requests 0.5 m/s^2 to clear the dead zone.\n" +
+                                                               "Then eases back to the normal plan.\n" +
                                                                "Acceleration is unchanged once moving.\n" +
+                                                               "May also follow a car that only inches forward.\n" +
                                                                "Rivian with sunnypilot longitudinal only.")
       self._launch_assist_toggle.set_visible(False)  # shown once CarParams say Rivian with longitudinal control
     except UnknownKeyName:
