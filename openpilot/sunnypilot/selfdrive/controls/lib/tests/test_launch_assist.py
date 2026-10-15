@@ -244,6 +244,19 @@ class TestLaunchAssistFire(OpenpilotTestCase):
     assert d.step(accel=0.49, ld=DEPARTING) == 0.49
     assert d.la.state == LaunchAssistState.idle
 
+  def test_end_reason_logged(self, mocker):
+    # on-truck logs tell a normal fade end from the speed cap
+    cloudlog = mocker.patch.object(la_mod, "cloudlog")
+    d = Driver()
+    d.fire()
+    d.steps(400, ld=DEPARTING)
+    d.step(CS=cs(standstill=False, v_raw=0.5))
+    d.arm()
+    d.step(ld=DEPARTING)
+    d.step(ld=lead(v_lead_k=0.2, v_lead=0.2), CS=cs(standstill=False, v_raw=0.2, v_ego=0.2))
+    ends = [c.kwargs["reason"] for c in cloudlog.event.call_args_list if c.args[0] == "launch assist end"]
+    assert ends == ["fade", "cap"]
+
   def test_clipped_to_limits(self):
     d = Driver()
     outs = [d.fire(accel=0.1, limits=(-3.5, 0.3))] + d.steps(FIRE_FRAMES - 1, accel=0.1, ld=DEPARTING, limits=(-3.5, 0.3))

@@ -90,6 +90,10 @@ class LaunchAssist:
     self.standstill_frames = 0
     self.floor = 0.
 
+  def _log_end(self, reason, CS, lead) -> None:
+    cloudlog.event("launch assist end", reason=reason, fire_frames=self.fire_frames, v_ego=float(CS.vEgo),
+                   v_lead_k=float(lead.vLeadK), d_rel=float(lead.dRel))
+
   def update(self, long_active, CS, lead, long_control_state, a_target, should_stop, accel, accel_limits):
     """accel: LongControl's output this frame. Returns it, or a higher floor while a launch is assisted."""
     self.update_param()
@@ -116,6 +120,7 @@ class LaunchAssist:
         self.reset()
       elif CS.vEgo >= lead.vLeadK:
         # already as fast as the lead: more would only close the gap (lead inching or crawling, then stopping)
+        self._log_end("cap", CS, lead)
         self.reset()
 
     elif self.state == LaunchAssistState.armed:
@@ -149,6 +154,7 @@ class LaunchAssist:
     floor = min(max(self.floor, accel_limits[0]), accel_limits[1])
     if self.state == LaunchAssistState.fading and floor <= accel:
       # back at the normal output: done until the next standstill
+      self._log_end("fade", CS, lead)
       self.reset()
       return accel
     return max(accel, floor)
