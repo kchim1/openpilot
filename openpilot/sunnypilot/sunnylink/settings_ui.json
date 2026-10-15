@@ -2260,6 +2260,19 @@
           ]
         },
         {
+          "key": "RivianLaunchAssist",
+          "widget": "toggle",
+          "title": "Launch Assist",
+          "description": "Starts the truck moving sooner when the car ahead pulls away from a stop. After a radar lead has been stopped ahead for a second and then starts moving away, sunnypilot briefly requests 0.5 m/s\u00b2 (at most 0.7 s) to get past the truck's standstill dead zone, then eases back to the normal plan. Once moving it accelerates as before. Rivian with sunnypilot longitudinal only. Can be changed while driving.",
+          "enablement": [
+            {
+              "type": "capability",
+              "field": "has_longitudinal_control",
+              "equals": true
+            }
+          ]
+        },
+        {
           "key": "RivianOfftrackCompensationEnabled",
           "widget": "toggle",
           "title": "Rear-Axle Off-Tracking Compensation (R1T)",

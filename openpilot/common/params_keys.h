@@ -314,4 +314,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     // Rivian: steer on the torque channel only, never hand back to angle. For collecting
     // torque calibration data on an angle-upgrade truck. Read once at the start of a drive.
     {"RivianForceTorqueSteering", {PERSISTENT | BACKUP, BOOL, "0"}},
+    // Rivian Launch Assist (sunnypilot longitudinal): a short 0.5 m/s^2 floor when a stopped radar lead
+    // pulls away, to get past the VDM standstill dead zone. controlsd and plannerd re-read it about once a second.
+    {"RivianLaunchAssist", {PERSISTENT | BACKUP, BOOL, "0"}},
 };

@@ -25,6 +25,8 @@ LongitudinalPlanSource = custom.LongitudinalPlanSP.LongitudinalPlanSource
 
 # plannerd runs at 20 Hz: re-read TrafficMode every 0.25 s so it can be switched while driving
 TRAFFIC_MODE_READ_FRAMES = 5
+# and RivianLaunchAssist every 1 s
+LAUNCH_ASSIST_READ_FRAMES = 20
 
 
 class LongitudinalPlannerSP:
@@ -47,6 +49,9 @@ class LongitudinalPlannerSP:
     self._traffic_mode_available = CP.openpilotLongitudinalControl
     self._traffic_mode_frame = 0
     self._traffic_mode_error_logged = False
+    self._launch_assist_available = CP.brand == 'rivian' and CP.openpilotLongitudinalControl
+    self._launch_assist_frame = 0
+    self._launch_assist_error_logged = False
 
     # Following distance offset, read once per drive (plannerd restarts on every onroad transition)
     if CP.openpilotLongitudinalControl:
@@ -71,6 +76,21 @@ class LongitudinalPlannerSP:
     if self._traffic_mode_available and self._traffic_mode_frame % TRAFFIC_MODE_READ_FRAMES == 0:
       self._mpc.traffic_mode = self.read_traffic_mode()
     self._traffic_mode_frame += 1
+
+  def read_launch_assist(self) -> bool:
+    try:
+      return self._params.get_bool("RivianLaunchAssist")
+    except Exception:
+      # params library built without the key, or a failed read: off rather than take plannerd down
+      if not self._launch_assist_error_logged:
+        cloudlog.exception("RivianLaunchAssist read failed, treating it as off")
+        self._launch_assist_error_logged = True
+      return False
+
+  def update_launch_assist(self) -> None:
+    if self._launch_assist_available and self._launch_assist_frame % LAUNCH_ASSIST_READ_FRAMES == 0:
+      self._mpc.launch_assist = self.read_launch_assist()
+    self._launch_assist_frame += 1
 
   def is_e2e(self, sm: messaging.SubMaster) -> bool:
     experimental_mode = sm['selfdriveState'].experimentalMode
@@ -112,6 +132,7 @@ class LongitudinalPlannerSP:
   def update(self, sm: messaging.SubMaster) -> None:
     self.events_sp.clear()
     self.update_traffic_mode()
+    self.update_launch_assist()
     self.dec.update(sm)
     self.e2e_alerts_helper.update(sm, self.events_sp)
 

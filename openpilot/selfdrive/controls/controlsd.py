@@ -26,6 +26,7 @@ from openpilot.selfdrive.locationd.helpers import PoseCalibrator, Pose
 
 from openpilot.sunnypilot.selfdrive.controls.controlsd_ext import ControlsExt
 from openpilot.sunnypilot.selfdrive.controls.lib.rivian_offtrack_ext import RivianOfftrackCompensation
+from openpilot.sunnypilot.selfdrive.controls.lib.launch_assist import LaunchAssist
 
 State = log.SelfdriveState.OpenpilotState
 LaneChangeState = log.LaneChangeState
@@ -99,6 +100,8 @@ class Controls(ControlsExt):
 
     # Rear-axle off-tracking compensation, R1T-specific (see wheelbase-offtracking-plan.md)
     self.rivian_offtrack = RivianOfftrackCompensation(self.params) if self.CP.brand == 'rivian' else None
+    # Rivian Launch Assist (RivianLaunchAssist toggle, sunnypilot longitudinal only)
+    self.launch_assist = LaunchAssist(self.params) if LaunchAssist.available(self.CP) else None
 
   def update(self):
     self.sm.update(15)
@@ -166,6 +169,9 @@ class Controls(ControlsExt):
     # accel PID loop
     pid_accel_limits = self.CI.get_pid_accel_limits(self.CP, self.CP_SP, CS.vEgo, CS.vCruise * CV.KPH_TO_MS)
     actuators.accel = float(self.LoC.update(CC.longActive, CS, long_plan.aTarget, long_plan.shouldStop, pid_accel_limits))
+    if self.launch_assist is not None:
+      actuators.accel = float(self.launch_assist.update(CC.longActive, CS, self.sm['radarState'].leadOne, self.LoC.long_control_state,
+                                                        long_plan.aTarget, long_plan.shouldStop, actuators.accel, pid_accel_limits))
 
     # Steering PID loop and lateral MPC
     # Reset desired curvature to current to avoid violating the limits on engage
