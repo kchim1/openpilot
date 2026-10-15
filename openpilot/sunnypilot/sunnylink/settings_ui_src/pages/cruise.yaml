@@ -67,6 +67,21 @@ sections:
       Turns off at the end of every drive.'
     enablement:
     - $ref: '#/macros/longitudinal'
+  - key: RivianLaunchAssist
+    widget: toggle
+    title: Launch Assist
+    description: Starts the truck moving sooner when the car ahead pulls away from a stop. Once the truck has been
+      stopped behind a radar-tracked car for a second and that car starts moving away, sunnypilot briefly raises its
+      request to 0.5 m/s² (under a second, ending sooner once the truck matches the car's speed) to get past the
+      truck's standstill dead zone, then eases back to the normal plan. Once moving it accelerates as before. Because
+      it starts sooner, the truck may also follow a car that only inches forward and stops. Rivian with sunnypilot
+      longitudinal only. Can be changed while driving.
+    visibility:
+    - type: capability
+      field: brand
+      equals: rivian
+    enablement:
+    - $ref: '#/macros/longitudinal'
   - key: IntelligentCruiseButtonManagement
     widget: toggle
     title: Intelligent Cruise Button Management (ICBM) (Alpha)
