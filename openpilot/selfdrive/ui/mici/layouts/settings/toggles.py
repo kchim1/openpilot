@@ -1,6 +1,7 @@
 from collections.abc import Callable
 
 from openpilot.cereal import log
+from openpilot.common.params import UnknownKeyName
 
 from openpilot.system.ui.widgets.scroller import NavScroller
 from openpilot.selfdrive.ui.mici.widgets.button import BigParamControl, BigMultiParamToggle, BigToggle, GreyBigButton
@@ -53,13 +54,17 @@ class TogglesLayoutMici(NavScroller):
                                                    "Set speed is a maximum, not a target.\n" +
                                                    "These are alpha features. Expect mistakes.\n" +
                                                    "The path colors show acceleration and braking.")
-    self._traffic_mode_toggle = BigParamControl("traffic mode", "TrafficMode",
-                                                description="Shorter gap for stop-and-go traffic.\n" +
-                                                            "About 0.5 s when nearly stopped, 1.0 s from 11 mph.\n" +
-                                                            "Stays at 1.0 s at every speed until turned off.\n" +
-                                                            "Ignores the following distance offset.\n" +
-                                                            "Hold the left thumb button 1 s to toggle.\n" +
-                                                            "Turns off at the end of every drive.")
+    # left out on a prebuilt whose params library does not know the setting yet
+    try:
+      self._traffic_mode_toggle = BigParamControl("traffic mode", "TrafficMode",
+                                                  description="Shorter gap for stop-and-go traffic.\n" +
+                                                              "About 0.5 s when nearly stopped, 1.0 s from 11 mph.\n" +
+                                                              "Stays at 1.0 s at every speed until turned off.\n" +
+                                                              "Ignores the following distance offset.\n" +
+                                                              "Hold the left thumb button 1 s to toggle.\n" +
+                                                              "Turns off at the end of every drive.")
+    except UnknownKeyName:
+      self._traffic_mode_toggle = None
     self._traffic_mode = ui_state.traffic_mode
     is_metric_toggle = BigParamControl("use metric units", "IsMetric")
     ldw_toggle = BigParamControl("lane departure warnings", "IsLdwEnabled",
@@ -81,7 +86,7 @@ class TogglesLayoutMici(NavScroller):
     self._scroller.add_widgets([
       self._personality_toggle,
       self._experimental_btn,
-      self._traffic_mode_toggle,
+      *([self._traffic_mode_toggle] if self._traffic_mode_toggle is not None else []),
       is_metric_toggle,
       ldw_toggle,
       always_on_dm_toggle,
@@ -93,14 +98,13 @@ class TogglesLayoutMici(NavScroller):
     # Toggle lists
     self._refresh_toggles = (
       ("ExperimentalMode", self._experimental_btn),
-      ("TrafficMode", self._traffic_mode_toggle),
       ("IsMetric", is_metric_toggle),
       ("IsLdwEnabled", ldw_toggle),
       ("AlwaysOnDM", always_on_dm_toggle),
       ("RecordFront", record_front),
       ("RecordAudio", record_mic),
       ("OpenpilotEnabledToggle", enable_openpilot),
-    )
+    ) + ((("TrafficMode", self._traffic_mode_toggle),) if self._traffic_mode_toggle is not None else ())
 
     enable_openpilot.set_enabled(lambda: not ui_state.engaged)
     record_front.set_enabled(False if ui_state.params.get_bool("RecordFrontLock") else (lambda: not ui_state.engaged))
@@ -122,7 +126,7 @@ class TogglesLayoutMici(NavScroller):
       ui_state.personality = personality
 
     # mirror Traffic Mode changes made elsewhere while this page is open: steering wheel, sunnylink, end of drive
-    if ui_state.traffic_mode != self._traffic_mode:
+    if self._traffic_mode_toggle is not None and ui_state.traffic_mode != self._traffic_mode:
       self._traffic_mode = ui_state.traffic_mode
       self._traffic_mode_toggle.set_checked(self._traffic_mode)
 
@@ -138,14 +142,14 @@ class TogglesLayoutMici(NavScroller):
       if ui_state.has_longitudinal_control:
         self._experimental_btn.set_visible(True)
         self._personality_toggle.set_visible(True)
-        self._traffic_mode_toggle.set_visible(True)
       else:
         # no long for now
         self._experimental_btn.set_visible(False)
         self._experimental_btn.set_checked(False)
         self._personality_toggle.set_visible(False)
-        self._traffic_mode_toggle.set_visible(False)
         ui_state.params.remove("ExperimentalMode")
+      if self._traffic_mode_toggle is not None:
+        self._traffic_mode_toggle.set_visible(ui_state.has_longitudinal_control)
 
     # Refresh toggles from params to mirror external changes
     for key, item in self._refresh_toggles:

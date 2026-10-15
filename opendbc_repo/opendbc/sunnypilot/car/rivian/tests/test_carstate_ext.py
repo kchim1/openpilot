@@ -92,6 +92,32 @@ class TestSetSpeedButtons(unittest.TestCase):
       self.assertAlmostEqual(ret.cruiseState.speed, 20., places=5)
     self.assertEqual(events, [TOGGLE])
 
+  def test_press_started_with_cruise_off_leaves_set_speed(self):
+    # pressed with cruise off (set speed follows vEgoCluster), cruise engaged while the button is still down, then
+    # released: cruise keeps the set speed it was engaged at
+    for frames_off, frames_on in ((1, 1), (30, 20), (5, TRAFFIC_MODE_HOLD_FRAMES - 10)):
+      with self.subTest(frames_off=frames_off, frames_on=frames_on):
+        self.setUp()
+        for _ in range(frames_off):
+          self._frame(decrease=True, cruise_enabled=False)
+        for _ in range(frames_on):
+          self._frame(decrease=True)
+        ret = self._frame()
+        self.assertEqual(button_events(ret), [])
+        self.assertAlmostEqual(ret.cruiseState.speed, 20., places=5)
+        # the next tap with cruise enabled lowers it as usual
+        self._frame(decrease=True)
+        self.assertAlmostEqual(self._frame().cruiseState.speed, 20. - CV.MPH_TO_MS, places=5)
+
+  def test_press_with_cruise_off_in_between_leaves_set_speed(self):
+    # cruise briefly off during the press: the set speed follows vEgoCluster, and the release does not lower it
+    for _ in range(10):
+      self._frame(decrease=True)
+    self._frame(decrease=True, cruise_enabled=False)
+    for _ in range(10):
+      self._frame(decrease=True)
+    self.assertAlmostEqual(self._frame().cruiseState.speed, 20., places=5)
+
   def test_increase_button_unchanged(self):
     # +1 on press, then each 66 frames held jumps up to the next multiple of 5
     expected = {1: 51, 65: 51, 66: 55, 131: 55, 132: 60}

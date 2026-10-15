@@ -8,7 +8,7 @@ from enum import Enum
 
 from openpilot.cereal import messaging, log, custom
 from opendbc.car.structs import car
-from openpilot.common.params import Params
+from openpilot.common.params import Params, UnknownKeyName
 from openpilot.selfdrive.ui.sunnypilot.layouts.settings.display import OnroadBrightness
 from openpilot.sunnypilot.models.helpers import ACTIVE_BUNDLE_KEYS, get_active_source
 from openpilot.sunnypilot.sunnylink.sunnylink_state import SunnylinkState
@@ -179,7 +179,11 @@ class UIStateSP:
     self.torque_override_enabled = self.params.get_bool("TorqueParamsOverrideEnabled")
     self.torque_override_lat_accel_factor = float(self.params.get("TorqueParamsOverrideLatAccelFactor", return_default=True))
     self.torque_override_friction = float(self.params.get("TorqueParamsOverrideFriction", return_default=True))
-    self.traffic_mode = self.params.get_bool("TrafficMode")
+    try:
+      self.traffic_mode = self.params.get_bool("TrafficMode")
+    except UnknownKeyName:
+      # a prebuilt whose params library does not know the setting yet: off, and this worker keeps running
+      self.traffic_mode = False
     self.true_v_ego_ui = self.params.get_bool("TrueVEgoUI")
     self.turn_signals = self.params.get_bool("ShowTurnSignals")
     self.boot_offroad_mode = self.params.get("DeviceBootMode", return_default=True)

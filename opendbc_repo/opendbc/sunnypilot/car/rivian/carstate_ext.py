@@ -35,6 +35,7 @@ class CarStateExt:
     self.distance_button = 0
     self.increase_counter = 0
     self.decrease_counter = 0
+    self.decrease_press_enabled = False
 
   def update_longitudinal_upgrade(self, ret: structs.CarState, can_parsers: dict[StrEnum, CANParser]) -> None:
     cp_park = can_parsers[Bus.alt]
@@ -74,15 +75,20 @@ class CarStateExt:
           self.set_speed += conversion
 
       # set speed down: a tap lowers the set speed by 1 when it is released. Held for TRAFFIC_MODE_HOLD_FRAMES, it sends
-      # one Traffic Mode toggle when the hold is reached and leaves the set speed alone (no long press steps)
+      # one Traffic Mode toggle when the hold is reached and leaves the set speed alone (no long press steps).
+      # Only a press made entirely with cruise enabled lowers it: one that starts with cruise off (set speed following
+      # vEgoCluster) must not lower the set speed cruise was engaged at while the button was held
       if self.decrease_button:
+        if not prev_decrease_button:
+          self.decrease_press_enabled = ret.cruiseState.enabled
         if self.decrease_counter == TRAFFIC_MODE_HOLD_FRAMES:
           button_events.append(structs.CarState.ButtonEvent(pressed=False, type=TRAFFIC_MODE_BUTTON))
-      elif prev_decrease_button and prev_decrease_counter < TRAFFIC_MODE_HOLD_FRAMES:
+      elif prev_decrease_button and prev_decrease_counter < TRAFFIC_MODE_HOLD_FRAMES and self.decrease_press_enabled:
         self.set_speed -= conversion
 
       if not ret.cruiseState.enabled:
         self.set_speed = ret.vEgoCluster
+        self.decrease_press_enabled = False
 
       # VDM_UserAdasRequest: 0=IDLE, 1=UP_1, 2=UP_2, 3=DOWN_1, 4=DOWN_2
       stalk_down = int(cp.vl["VDM_AdasSts"]["VDM_UserAdasRequest"]) in (3, 4)

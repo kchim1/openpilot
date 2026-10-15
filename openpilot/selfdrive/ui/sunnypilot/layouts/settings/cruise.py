@@ -97,10 +97,13 @@ class CruiseLayout(Widget):
       label_callback=_following_time_offset_label,
       inline=True)
 
+    # hidden, and not tied to the param, on a prebuilt whose params library does not know the setting yet
+    traffic_mode_known = b"TrafficMode" in ui_state.params.all_keys()
     self.traffic_mode_toggle = toggle_item_sp(
       title=tr("Traffic Mode"),
       description=tr(TRAFFIC_MODE_DESCRIPTION),
-      param="TrafficMode")
+      param="TrafficMode" if traffic_mode_known else None)
+    self.traffic_mode_toggle.set_visible(traffic_mode_known)
     self._traffic_mode = ui_state.traffic_mode
 
     self.sla_settings_button = simple_button_item_sp(
