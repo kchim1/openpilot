@@ -29,6 +29,19 @@ ACC_ENABLED_DESCRIPTION = tr_noop("Enable custom Short & Long press increments f
 ACC_NOLONG_DESCRIPTION = tr_noop("This feature can only be used with sunnypilot longitudinal control enabled.")
 ACC_PCMCRUISE_DISABLED_DESCRIPTION = tr_noop("This feature is not supported on this platform due to vehicle limitations.")
 ONROAD_ONLY_DESCRIPTION = tr_noop("Start the vehicle to check vehicle compatibility.")
+FOLLOWING_TIME_OFFSET_DESCRIPTION = tr_noop("Adjusts the gap to the car ahead in every driving personality, " +
+                                            "from -10% (closer) to +10% (further). In Experimental mode the driving model " +
+                                            "can keep its own gap, so the change may be smaller. Takes effect on the next drive.")
+TRAFFIC_MODE_DESCRIPTION = tr_noop("Shorter gap for stop-and-go traffic: about 0.5 s behind the car ahead when nearly stopped, " +
+                                   "rising to 1.0 s from about 11 mph and staying at 1.0 s at every speed until turned off " +
+                                   "(Aggressive is 1.25 s). Ignores Following Distance Offset while on. Hold the left thumb " +
+                                   "button on the steering wheel for 1 second to toggle. Turns off at the end of every drive.")
+
+
+def _following_time_offset_label(value: int) -> str:
+  if value == 0:
+    return tr("Default")
+  return f"+{value}%" if value > 0 else f"{value}%"
 
 
 class CruiseLayout(Widget):
@@ -76,6 +89,23 @@ class CruiseLayout(Widget):
       min_value=1, max_value=3, value_change_step=1,
       inline=True)
 
+    self.following_time_offset = option_item_sp(
+      title=tr("Following Distance Offset"),
+      description=tr(FOLLOWING_TIME_OFFSET_DESCRIPTION),
+      param="SPFollowingTimeOffset",
+      min_value=-10, max_value=10, value_change_step=2,
+      label_callback=_following_time_offset_label,
+      inline=True)
+
+    # hidden, and not tied to the param, on a prebuilt whose params library does not know the setting yet
+    traffic_mode_known = b"TrafficMode" in ui_state.params.all_keys()
+    self.traffic_mode_toggle = toggle_item_sp(
+      title=tr("Traffic Mode"),
+      description=tr(TRAFFIC_MODE_DESCRIPTION),
+      param="TrafficMode" if traffic_mode_known else None)
+    self.traffic_mode_toggle.set_visible(traffic_mode_known)
+    self._traffic_mode = ui_state.traffic_mode
+
     self.sla_settings_button = simple_button_item_sp(
       button_text=lambda: tr("Speed Limit"),
       button_width=800,
@@ -95,6 +125,8 @@ class CruiseLayout(Widget):
       self.custom_acc_toggle,
       self.custom_acc_short_increment,
       self.custom_acc_long_increment,
+      self.following_time_offset,
+      self.traffic_mode_toggle,
       self.sla_settings_button,
     ]
     return items
@@ -147,6 +179,8 @@ class CruiseLayout(Widget):
         self.dec_toggle.action_item.set_enabled(has_long)
         self.scc_v_toggle.action_item.set_enabled(True)
         self.scc_m_toggle.action_item.set_enabled(True)
+        self.following_time_offset.action_item.set_enabled(has_long and ui_state.is_offroad())
+        self.traffic_mode_toggle.action_item.set_enabled(has_long)
       else:
         ui_state.params.remove("CustomAccIncrementsEnabled")
         ui_state.params.remove("DynamicExperimentalControl")
@@ -156,11 +190,20 @@ class CruiseLayout(Widget):
         self.dec_toggle.action_item.set_enabled(False)
         self.scc_v_toggle.action_item.set_enabled(False)
         self.scc_m_toggle.action_item.set_enabled(False)
+        self.following_time_offset.action_item.set_enabled(False)
+        self.traffic_mode_toggle.action_item.set_enabled(False)
 
     else:
       has_icbm = has_long = False
       self.icbm_toggle.action_item.set_enabled(False)
+      self.following_time_offset.action_item.set_enabled(False)
+      self.traffic_mode_toggle.action_item.set_enabled(False)
       self.icbm_toggle.set_description(tr(ONROAD_ONLY_DESCRIPTION))
+
+    # mirror Traffic Mode changes made elsewhere: steering wheel, sunnylink, cleared at the end of a drive
+    if ui_state.traffic_mode != self._traffic_mode:
+      self._traffic_mode = ui_state.traffic_mode
+      self.traffic_mode_toggle.action_item.set_state(self._traffic_mode)
 
     show_custom_acc_desc = False
 

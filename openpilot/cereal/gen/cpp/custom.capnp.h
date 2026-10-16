@@ -178,6 +178,7 @@ enum class LongitudinalPlanSource_ad47440556d96ec4: uint16_t {
 };
 CAPNP_DECLARE_ENUM(LongitudinalPlanSource, ad47440556d96ec4);
 CAPNP_DECLARE_SCHEMA(a567bce822ae28fe);
+CAPNP_DECLARE_SCHEMA(f530307bb2c30352);
 CAPNP_DECLARE_SCHEMA(da96579883444c35);
 CAPNP_DECLARE_SCHEMA(f6e831752fcdf793);
 CAPNP_DECLARE_SCHEMA(b8007ed8a646b5e6);
@@ -208,6 +209,8 @@ enum class EventName_b8007ed8a646b5e6: uint16_t {
   E2E_CHIME,
   LANE_CHANGE_ROAD_EDGE,
   BIG_MODEL_READY,
+  TRAFFIC_MODE_ON,
+  TRAFFIC_MODE_OFF,
 };
 CAPNP_DECLARE_ENUM(EventName, b8007ed8a646b5e6);
 CAPNP_DECLARE_SCHEMA(80ae746ee2596b11);
@@ -477,9 +480,10 @@ struct LongitudinalPlanSP {
   typedef ::capnp::schemas::LongitudinalPlanSource_ad47440556d96ec4 LongitudinalPlanSource;
 
   struct E2eAlerts;
+  struct FollowDistance;
 
   struct _capnpPrivate {
-    CAPNP_DECLARE_STRUCT_HEADER(f35cc4560bbf6ec2, 2, 5)
+    CAPNP_DECLARE_STRUCT_HEADER(f35cc4560bbf6ec2, 2, 6)
     #if !CAPNP_LITE
     static constexpr ::capnp::_::RawBrandedSchema const* brand() { return &schema->defaultBrand; }
     #endif  // !CAPNP_LITE
@@ -614,6 +618,21 @@ struct LongitudinalPlanSP::E2eAlerts {
 
   struct _capnpPrivate {
     CAPNP_DECLARE_STRUCT_HEADER(a567bce822ae28fe, 1, 0)
+    #if !CAPNP_LITE
+    static constexpr ::capnp::_::RawBrandedSchema const* brand() { return &schema->defaultBrand; }
+    #endif  // !CAPNP_LITE
+  };
+};
+
+struct LongitudinalPlanSP::FollowDistance {
+  FollowDistance() = delete;
+
+  class Reader;
+  class Builder;
+  class Pipeline;
+
+  struct _capnpPrivate {
+    CAPNP_DECLARE_STRUCT_HEADER(f530307bb2c30352, 2, 0)
     #if !CAPNP_LITE
     static constexpr ::capnp::_::RawBrandedSchema const* brand() { return &schema->defaultBrand; }
     #endif  // !CAPNP_LITE
@@ -2300,6 +2319,9 @@ public:
   inline bool hasE2eAlerts() const;
   inline  ::cereal::LongitudinalPlanSP::E2eAlerts::Reader getE2eAlerts() const;
 
+  inline bool hasFollowDistance() const;
+  inline  ::cereal::LongitudinalPlanSP::FollowDistance::Reader getFollowDistance() const;
+
 private:
   ::capnp::_::StructReader _reader;
   template <typename, ::capnp::Kind>
@@ -2372,6 +2394,13 @@ public:
   inline void adoptE2eAlerts(::capnp::Orphan< ::cereal::LongitudinalPlanSP::E2eAlerts>&& value);
   inline ::capnp::Orphan< ::cereal::LongitudinalPlanSP::E2eAlerts> disownE2eAlerts();
 
+  inline bool hasFollowDistance();
+  inline  ::cereal::LongitudinalPlanSP::FollowDistance::Builder getFollowDistance();
+  inline void setFollowDistance( ::cereal::LongitudinalPlanSP::FollowDistance::Reader value);
+  inline  ::cereal::LongitudinalPlanSP::FollowDistance::Builder initFollowDistance();
+  inline void adoptFollowDistance(::capnp::Orphan< ::cereal::LongitudinalPlanSP::FollowDistance>&& value);
+  inline ::capnp::Orphan< ::cereal::LongitudinalPlanSP::FollowDistance> disownFollowDistance();
+
 private:
   ::capnp::_::StructBuilder _builder;
   template <typename, ::capnp::Kind>
@@ -2394,6 +2423,7 @@ public:
   inline  ::cereal::LongitudinalPlanSP::SmartCruiseControl::Pipeline getSmartCruiseControl();
   inline  ::cereal::LongitudinalPlanSP::SpeedLimit::Pipeline getSpeedLimit();
   inline  ::cereal::LongitudinalPlanSP::E2eAlerts::Pipeline getE2eAlerts();
+  inline  ::cereal::LongitudinalPlanSP::FollowDistance::Pipeline getFollowDistance();
 private:
   ::capnp::AnyPointer::Pipeline _typeless;
   friend class ::capnp::PipelineHook;
@@ -3156,6 +3186,97 @@ private:
 class LongitudinalPlanSP::E2eAlerts::Pipeline {
 public:
   typedef E2eAlerts Pipelines;
+
+  inline Pipeline(decltype(nullptr)): _typeless(nullptr) {}
+  inline explicit Pipeline(::capnp::AnyPointer::Pipeline&& typeless)
+      : _typeless(kj::mv(typeless)) {}
+
+private:
+  ::capnp::AnyPointer::Pipeline _typeless;
+  friend class ::capnp::PipelineHook;
+  template <typename, ::capnp::Kind>
+  friend struct ::capnp::ToDynamic_;
+};
+#endif  // !CAPNP_LITE
+
+class LongitudinalPlanSP::FollowDistance::Reader {
+public:
+  typedef FollowDistance Reads;
+
+  Reader() = default;
+  inline explicit Reader(::capnp::_::StructReader base): _reader(base) {}
+
+  inline ::capnp::MessageSize totalSize() const {
+    return _reader.totalSize().asPublic();
+  }
+
+#if !CAPNP_LITE
+  inline ::kj::StringTree toString() const {
+    return ::capnp::_::structString(_reader, *_capnpPrivate::brand());
+  }
+#endif  // !CAPNP_LITE
+
+  inline bool getTrafficMode() const;
+
+  inline float getTFollow() const;
+
+  inline float getOffsetPct() const;
+
+  inline float getJerkFactor() const;
+
+private:
+  ::capnp::_::StructReader _reader;
+  template <typename, ::capnp::Kind>
+  friend struct ::capnp::ToDynamic_;
+  template <typename, ::capnp::Kind>
+  friend struct ::capnp::_::PointerHelpers;
+  template <typename, ::capnp::Kind>
+  friend struct ::capnp::List;
+  friend class ::capnp::MessageBuilder;
+  friend class ::capnp::Orphanage;
+};
+
+class LongitudinalPlanSP::FollowDistance::Builder {
+public:
+  typedef FollowDistance Builds;
+
+  Builder() = delete;  // Deleted to discourage incorrect usage.
+                       // You can explicitly initialize to nullptr instead.
+  inline Builder(decltype(nullptr)) {}
+  inline explicit Builder(::capnp::_::StructBuilder base): _builder(base) {}
+  inline operator Reader() const { return Reader(_builder.asReader()); }
+  inline Reader asReader() const { return *this; }
+
+  inline ::capnp::MessageSize totalSize() const { return asReader().totalSize(); }
+#if !CAPNP_LITE
+  inline ::kj::StringTree toString() const { return asReader().toString(); }
+#endif  // !CAPNP_LITE
+
+  inline bool getTrafficMode();
+  inline void setTrafficMode(bool value);
+
+  inline float getTFollow();
+  inline void setTFollow(float value);
+
+  inline float getOffsetPct();
+  inline void setOffsetPct(float value);
+
+  inline float getJerkFactor();
+  inline void setJerkFactor(float value);
+
+private:
+  ::capnp::_::StructBuilder _builder;
+  template <typename, ::capnp::Kind>
+  friend struct ::capnp::ToDynamic_;
+  friend class ::capnp::Orphanage;
+  template <typename, ::capnp::Kind>
+  friend struct ::capnp::_::PointerHelpers;
+};
+
+#if !CAPNP_LITE
+class LongitudinalPlanSP::FollowDistance::Pipeline {
+public:
+  typedef FollowDistance Pipelines;
 
   inline Pipeline(decltype(nullptr)): _typeless(nullptr) {}
   inline explicit Pipeline(::capnp::AnyPointer::Pipeline&& typeless)
@@ -6883,6 +7004,45 @@ inline ::capnp::Orphan< ::cereal::LongitudinalPlanSP::E2eAlerts> LongitudinalPla
       ::capnp::bounded<4>() * ::capnp::POINTERS));
 }
 
+inline bool LongitudinalPlanSP::Reader::hasFollowDistance() const {
+  return !_reader.getPointerField(
+      ::capnp::bounded<5>() * ::capnp::POINTERS).isNull();
+}
+inline bool LongitudinalPlanSP::Builder::hasFollowDistance() {
+  return !_builder.getPointerField(
+      ::capnp::bounded<5>() * ::capnp::POINTERS).isNull();
+}
+inline  ::cereal::LongitudinalPlanSP::FollowDistance::Reader LongitudinalPlanSP::Reader::getFollowDistance() const {
+  return ::capnp::_::PointerHelpers< ::cereal::LongitudinalPlanSP::FollowDistance>::get(_reader.getPointerField(
+      ::capnp::bounded<5>() * ::capnp::POINTERS));
+}
+inline  ::cereal::LongitudinalPlanSP::FollowDistance::Builder LongitudinalPlanSP::Builder::getFollowDistance() {
+  return ::capnp::_::PointerHelpers< ::cereal::LongitudinalPlanSP::FollowDistance>::get(_builder.getPointerField(
+      ::capnp::bounded<5>() * ::capnp::POINTERS));
+}
+#if !CAPNP_LITE
+inline  ::cereal::LongitudinalPlanSP::FollowDistance::Pipeline LongitudinalPlanSP::Pipeline::getFollowDistance() {
+  return  ::cereal::LongitudinalPlanSP::FollowDistance::Pipeline(_typeless.getPointerField(5));
+}
+#endif  // !CAPNP_LITE
+inline void LongitudinalPlanSP::Builder::setFollowDistance( ::cereal::LongitudinalPlanSP::FollowDistance::Reader value) {
+  ::capnp::_::PointerHelpers< ::cereal::LongitudinalPlanSP::FollowDistance>::set(_builder.getPointerField(
+      ::capnp::bounded<5>() * ::capnp::POINTERS), value);
+}
+inline  ::cereal::LongitudinalPlanSP::FollowDistance::Builder LongitudinalPlanSP::Builder::initFollowDistance() {
+  return ::capnp::_::PointerHelpers< ::cereal::LongitudinalPlanSP::FollowDistance>::init(_builder.getPointerField(
+      ::capnp::bounded<5>() * ::capnp::POINTERS));
+}
+inline void LongitudinalPlanSP::Builder::adoptFollowDistance(
+    ::capnp::Orphan< ::cereal::LongitudinalPlanSP::FollowDistance>&& value) {
+  ::capnp::_::PointerHelpers< ::cereal::LongitudinalPlanSP::FollowDistance>::adopt(_builder.getPointerField(
+      ::capnp::bounded<5>() * ::capnp::POINTERS), kj::mv(value));
+}
+inline ::capnp::Orphan< ::cereal::LongitudinalPlanSP::FollowDistance> LongitudinalPlanSP::Builder::disownFollowDistance() {
+  return ::capnp::_::PointerHelpers< ::cereal::LongitudinalPlanSP::FollowDistance>::disown(_builder.getPointerField(
+      ::capnp::bounded<5>() * ::capnp::POINTERS));
+}
+
 inline  ::cereal::LongitudinalPlanSP::DynamicExperimentalControl::DynamicExperimentalControlState LongitudinalPlanSP::DynamicExperimentalControl::Reader::getState() const {
   return _reader.getDataField< ::cereal::LongitudinalPlanSP::DynamicExperimentalControl::DynamicExperimentalControlState>(
       ::capnp::bounded<0>() * ::capnp::ELEMENTS);
@@ -7471,6 +7631,62 @@ inline bool LongitudinalPlanSP::E2eAlerts::Builder::getLeadDepartAlert() {
 inline void LongitudinalPlanSP::E2eAlerts::Builder::setLeadDepartAlert(bool value) {
   _builder.setDataField<bool>(
       ::capnp::bounded<1>() * ::capnp::ELEMENTS, value);
+}
+
+inline bool LongitudinalPlanSP::FollowDistance::Reader::getTrafficMode() const {
+  return _reader.getDataField<bool>(
+      ::capnp::bounded<0>() * ::capnp::ELEMENTS);
+}
+
+inline bool LongitudinalPlanSP::FollowDistance::Builder::getTrafficMode() {
+  return _builder.getDataField<bool>(
+      ::capnp::bounded<0>() * ::capnp::ELEMENTS);
+}
+inline void LongitudinalPlanSP::FollowDistance::Builder::setTrafficMode(bool value) {
+  _builder.setDataField<bool>(
+      ::capnp::bounded<0>() * ::capnp::ELEMENTS, value);
+}
+
+inline float LongitudinalPlanSP::FollowDistance::Reader::getTFollow() const {
+  return _reader.getDataField<float>(
+      ::capnp::bounded<1>() * ::capnp::ELEMENTS);
+}
+
+inline float LongitudinalPlanSP::FollowDistance::Builder::getTFollow() {
+  return _builder.getDataField<float>(
+      ::capnp::bounded<1>() * ::capnp::ELEMENTS);
+}
+inline void LongitudinalPlanSP::FollowDistance::Builder::setTFollow(float value) {
+  _builder.setDataField<float>(
+      ::capnp::bounded<1>() * ::capnp::ELEMENTS, value);
+}
+
+inline float LongitudinalPlanSP::FollowDistance::Reader::getOffsetPct() const {
+  return _reader.getDataField<float>(
+      ::capnp::bounded<2>() * ::capnp::ELEMENTS);
+}
+
+inline float LongitudinalPlanSP::FollowDistance::Builder::getOffsetPct() {
+  return _builder.getDataField<float>(
+      ::capnp::bounded<2>() * ::capnp::ELEMENTS);
+}
+inline void LongitudinalPlanSP::FollowDistance::Builder::setOffsetPct(float value) {
+  _builder.setDataField<float>(
+      ::capnp::bounded<2>() * ::capnp::ELEMENTS, value);
+}
+
+inline float LongitudinalPlanSP::FollowDistance::Reader::getJerkFactor() const {
+  return _reader.getDataField<float>(
+      ::capnp::bounded<3>() * ::capnp::ELEMENTS);
+}
+
+inline float LongitudinalPlanSP::FollowDistance::Builder::getJerkFactor() {
+  return _builder.getDataField<float>(
+      ::capnp::bounded<3>() * ::capnp::ELEMENTS);
+}
+inline void LongitudinalPlanSP::FollowDistance::Builder::setJerkFactor(float value) {
+  _builder.setDataField<float>(
+      ::capnp::bounded<3>() * ::capnp::ELEMENTS, value);
 }
 
 inline bool OnroadEventSP::Reader::hasEvents() const {

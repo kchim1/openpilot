@@ -281,6 +281,14 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     {"SpeedLimitPolicy", {PERSISTENT | BACKUP, INT, "3"}},
     {"SpeedLimitValueOffset", {PERSISTENT | BACKUP, INT, "0"}},
 
+    // Following distance offset: percent added to the personality's follow time, -10 to +10.
+    // Read by the sunnypilot longitudinal planner at the start of each drive.
+    {"SPFollowingTimeOffset", {PERSISTENT | BACKUP, INT, "0"}},
+
+    // Traffic Mode: shorter follow time for stop-and-go traffic, ignores SPFollowingTimeOffset while on.
+    // Switchable while driving (plannerd re-reads it every 0.25 s); cleared at the end of every drive and on boot.
+    {"TrafficMode", {CLEAR_ON_MANAGER_START | CLEAR_ON_OFFROAD_TRANSITION, BOOL, "0"}},
+
     // Smart Cruise Control
     {"MapTargetVelocities", {CLEAR_ON_ONROAD_TRANSITION, STRING}},
     {"SmartCruiseControlMap", {PERSISTENT | BACKUP, BOOL, "0"}},
@@ -303,4 +311,10 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     // Rivian rear-axle off-tracking compensation (see wheelbase-offtracking-plan.md)
     {"RivianOfftrackCompensationEnabled", {PERSISTENT | BACKUP, BOOL, "0"}},
     {"RivianOfftrackCompensationGain", {PERSISTENT | BACKUP, FLOAT, "0.5"}},
+    // Rivian: steer on the torque channel only, never hand back to angle. For collecting
+    // torque calibration data on an angle-upgrade truck. Read once at the start of a drive.
+    {"RivianForceTorqueSteering", {PERSISTENT | BACKUP, BOOL, "0"}},
+    // Rivian Launch Assist (sunnypilot longitudinal): a short 0.5 m/s^2 floor when a stopped radar lead
+    // pulls away, to get past the VDM standstill dead zone. controlsd and plannerd re-read it about once a second.
+    {"RivianLaunchAssist", {PERSISTENT | BACKUP, BOOL, "0"}},
 };

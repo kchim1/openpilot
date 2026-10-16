@@ -78,6 +78,42 @@ def get_T_FOLLOW(personality=log.LongitudinalPersonality.standard):
   else:
     raise NotImplementedError("Longitudinal personality not supported")
 
+# Following distance offset limits, in percent of the personality's follow time.
+# Enforced here so no setting, sunnylink push or caller can scale the gap past them.
+T_FOLLOW_OFFSET_PCT_MIN = -10
+T_FOLLOW_OFFSET_PCT_MAX = 10
+
+
+def clip_t_follow_offset_pct(offset_pct):
+  try:
+    offset_pct = float(offset_pct)
+  except (TypeError, ValueError):
+    return 0.
+  if not np.isfinite(offset_pct):
+    return 0.
+  return float(np.clip(offset_pct, T_FOLLOW_OFFSET_PCT_MIN, T_FOLLOW_OFFSET_PCT_MAX))
+
+# Traffic Mode: a shorter gap for stop-and-go traffic, switched live by the sunnypilot planner.
+# 0.5 s at standstill rising to 1.0 s at 5 m/s (~11 mph), and 1.0 s at every higher speed (Aggressive is 1.25 s).
+# It replaces the personality's follow time and ignores the offset. Only the follow time and the jerk
+# factor change: STOP_DISTANCE, COMFORT_BRAKE, LEAD_DANGER_FACTOR, DANGER_ZONE_COST and the accel limits do not.
+TRAFFIC_MODE_T_FOLLOW_BP = [0., 5.]
+TRAFFIC_MODE_T_FOLLOW_V = [0.5, 1.0]
+TRAFFIC_MODE_JERK_FACTOR = 0.5  # same as Aggressive
+
+
+def get_traffic_mode_T_FOLLOW(v_ego):
+  return float(np.interp(v_ego, TRAFFIC_MODE_T_FOLLOW_BP, TRAFFIC_MODE_T_FOLLOW_V))
+
+# Rivian Launch Assist, set by the sunnypilot planner: while the planned speed is nearly zero, a radar lead that is
+# pulling away keeps its acceleration longer in the prediction (smaller aLeadTau), so the plan starts following sooner.
+LAUNCH_ASSIST_V_EGO_MAX = 1.0
+LAUNCH_ASSIST_V_LEAD_MIN = 0.3
+LAUNCH_ASSIST_V_LEAD_K_MIN = 0.15  # filtered speed too, so one noisy raw vLead sample can't trigger it
+LAUNCH_ASSIST_A_LEAD_MIN = 0.1
+LAUNCH_ASSIST_A_LEAD_TAU = 0.3
+
+
 def get_stopped_equivalence_factor(v_lead):
   return (v_lead**2) / (2 * COMFORT_BRAKE)
 
@@ -214,6 +250,15 @@ def gen_long_ocp():
 class LongitudinalMpc:
   def __init__(self, dt=DT_MDL):
     self.dt = dt
+    # Following distance offset in percent, set by the sunnypilot planner at the start of a drive
+    self.t_follow_offset_pct = 0.
+    # Traffic Mode, set by the sunnypilot planner while driving. Must exist before reset(), which calls set_weights()
+    self.traffic_mode = False
+    # Rivian Launch Assist, set by the sunnypilot planner while driving
+    self.launch_assist = False
+    # follow time and jerk factor last passed to the solver, for logging
+    self.t_follow = get_T_FOLLOW()
+    self.jerk_factor = get_jerk_factor()
     self.solver = AcadosOcpSolverCython(MODEL_NAME, ACADOS_SOLVER_TYPE, N)
     self.reset()
     self.source = LongitudinalPlanSource.cruise
@@ -262,7 +307,8 @@ class LongitudinalMpc:
       self.solver.cost_set(i, 'Zl', Zl)
 
   def set_weights(self, prev_accel_constraint=True, personality=log.LongitudinalPersonality.standard):
-    jerk_factor = get_jerk_factor(personality)
+    jerk_factor = TRAFFIC_MODE_JERK_FACTOR if self.traffic_mode else get_jerk_factor(personality)
+    self.jerk_factor = jerk_factor
     a_change_cost = A_CHANGE_COST if prev_accel_constraint else 0
     cost_weights = [X_EGO_OBSTACLE_COST, X_EGO_COST, V_EGO_COST, A_EGO_COST, jerk_factor * a_change_cost, jerk_factor * J_EGO_COST]
     constraint_cost_weights = [LIMIT_COST, LIMIT_COST, LIMIT_COST, DANGER_ZONE_COST]
@@ -291,6 +337,9 @@ class LongitudinalMpc:
       v_lead = lead.vLead
       a_lead = lead.aLeadK
       a_lead_tau = lead.aLeadTau
+      if self.launch_assist and lead.radar and v_ego < LAUNCH_ASSIST_V_EGO_MAX and v_lead > LAUNCH_ASSIST_V_LEAD_MIN and \
+         lead.vLeadK > LAUNCH_ASSIST_V_LEAD_K_MIN and a_lead > LAUNCH_ASSIST_A_LEAD_MIN:
+        a_lead_tau = min(a_lead_tau, LAUNCH_ASSIST_A_LEAD_TAU)
     else:
       # Fake a fast lead car, so mpc can keep running in the same mode
       x_lead = 50.0
@@ -307,8 +356,20 @@ class LongitudinalMpc:
     lead_xv = self.extrapolate_lead(x_lead, v_lead, a_lead, a_lead_tau)
     return lead_xv
 
+  def get_t_follow_offset_pct(self):
+    # Traffic Mode ignores the offset (the stored setting is untouched and applies again once it is off)
+    return 0. if self.traffic_mode else clip_t_follow_offset_pct(self.t_follow_offset_pct)
+
+  def get_t_follow(self, personality=log.LongitudinalPersonality.standard):
+    if self.traffic_mode:
+      # x0 holds the speed the planner just passed to set_cur_state()
+      return get_traffic_mode_T_FOLLOW(self.x0[1])
+    return get_T_FOLLOW(personality) * (1 + self.get_t_follow_offset_pct() / 100)
+
   def update(self, radarstate, personality=log.LongitudinalPersonality.standard):
-    t_follow = get_T_FOLLOW(personality)
+    # The follow time also moves the danger zone (LEAD_DANGER_FACTOR * desired distance), as a personality change does
+    t_follow = self.get_t_follow(personality)
+    self.t_follow = t_follow
 
     lead_xv_0 = self.process_lead(radarstate.leadOne)
     lead_xv_1 = self.process_lead(radarstate.leadTwo)

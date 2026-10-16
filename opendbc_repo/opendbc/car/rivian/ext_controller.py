@@ -84,6 +84,8 @@ class ExternalController:
     self.torque_active_frames = 0
     self.lat_active_last = False
     self.eac_dead_frames = 0
+    # set once by card from the RivianForceTorqueSteering param: steer on torque for the whole engagement
+    self.force_torque = False
 
     # angle command
     self.apply_angle_last = 0.0
@@ -167,6 +169,9 @@ class ExternalController:
 
     if not lat_active:
       self.torque_active = False
+    # torque-only: same state as the cooperative torque phase, it just never hands back to angle
+    elif self.force_torque:
+      self.torque_active = True
     # enter torque the moment the driver touches the wheel, which is when the EPAS drops angle control
     elif self.hands_on and CS.out.steeringPressed:
       self.torque_active = True

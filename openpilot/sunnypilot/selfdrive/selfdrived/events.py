@@ -260,4 +260,14 @@ EVENTS_SP: dict[int, dict[str, Alert | AlertCallbackType]] = {
       AlertStatus.normal, AlertSize.small,
       Priority.LOW, VisualAlert.none, AudibleAlert.prompt, 2.),
   },
+
+  # PERMANENT: shown whether or not openpilot is engaged, and never blocks engaging. Default LOWER priority, like
+  # personalityChanged: it never replaces an active Take Control, Car in Blindspot or Pay Attention prompt
+  EventNameSP.trafficModeOn: {
+    ET.PERMANENT: NormalPermanentAlert("Traffic Mode On", duration=2.),
+  },
+
+  EventNameSP.trafficModeOff: {
+    ET.PERMANENT: NormalPermanentAlert("Traffic Mode Off", duration=2.),
+  },
 }

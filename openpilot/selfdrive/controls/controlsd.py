@@ -26,6 +26,7 @@ from openpilot.selfdrive.locationd.helpers import PoseCalibrator, Pose
 
 from openpilot.sunnypilot.selfdrive.controls.controlsd_ext import ControlsExt
 from openpilot.sunnypilot.selfdrive.controls.lib.rivian_offtrack_ext import RivianOfftrackCompensation
+from openpilot.sunnypilot.selfdrive.controls.lib.launch_assist import LaunchAssist
 
 State = log.SelfdriveState.OpenpilotState
 LaneChangeState = log.LaneChangeState
@@ -89,9 +90,18 @@ class Controls(ControlsExt):
     # angle controller alongside so angle mode gets upstream saturation warnings
     self.LaC_angle = LatControlAngle(self.CP, self.CP_SP, self.CI, DT_CTRL) if self.CP.brand == 'rivian' else None
     self.angle_steering = False
+    # torque-only steering (see RivianForceTorqueSteering): the angle channel is never used
+    self.rivian_force_torque = False
+    if self.CP.brand == 'rivian':
+      try:
+        self.rivian_force_torque = self.params.get_bool("RivianForceTorqueSteering")
+      except Exception:
+        cloudlog.exception("RivianForceTorqueSteering unreadable, using default steering mode")
 
     # Rear-axle off-tracking compensation, R1T-specific (see wheelbase-offtracking-plan.md)
     self.rivian_offtrack = RivianOfftrackCompensation(self.params) if self.CP.brand == 'rivian' else None
+    # Rivian Launch Assist (RivianLaunchAssist toggle, sunnypilot longitudinal only)
+    self.launch_assist = LaunchAssist(self.params) if LaunchAssist.available(self.CP) else None
 
   def update(self):
     self.sm.update(15)
@@ -159,6 +169,9 @@ class Controls(ControlsExt):
     # accel PID loop
     pid_accel_limits = self.CI.get_pid_accel_limits(self.CP, self.CP_SP, CS.vEgo, CS.vCruise * CV.KPH_TO_MS)
     actuators.accel = float(self.LoC.update(CC.longActive, CS, long_plan.aTarget, long_plan.shouldStop, pid_accel_limits))
+    if self.launch_assist is not None:
+      actuators.accel = float(self.launch_assist.update(CC.longActive, CS, self.sm['radarState'].leadOne, self.LoC.long_control_state,
+                                                        long_plan.aTarget, long_plan.shouldStop, actuators.accel, pid_accel_limits))
 
     # Steering PID loop and lateral MPC
     # Reset desired curvature to current to avoid violating the limits on engage
@@ -174,7 +187,9 @@ class Controls(ControlsExt):
     actuators.curvature = self.desired_curvature
     if self.LaC_angle is not None:
       # steering on the angle channel, the torque output is idle
-      self.angle_steering = CC.latActive and self.sm['carOutput'].actuatorsOutput.torqueOutputCan == 0
+      # in torque-only mode a zero torque output is just a zero crossing, not angle mode
+      self.angle_steering = (not self.rivian_force_torque and CC.latActive and
+                             self.sm['carOutput'].actuatorsOutput.torqueOutputCan == 0)
     steer, lateral_output, lac_log = self.LaC.update(CC.latActive, CS, self.VM, lp,
                                                      self.steer_limited_by_safety or self.angle_steering, self.desired_curvature,
                                                      self.calibrated_pose, curvature_limited, lat_delay)

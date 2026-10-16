@@ -33,21 +33,21 @@ sections:
   items:
   - key: RivianR1SWheelbase
     widget: toggle
-    title: I Drive an R1S
-    description: The R1S and R1T have different wheelbases (3.08 m and 3.45 m), and currently openpilot can't tell them apart. It assumes an R1T by default. Turn this on if you drive an R1S so steering calculations use the correct wheelbase. Can only be changed while not driving; takes effect on your next drive.
+    title: I Drive an R1S (not R1T)
+    description: R1S and R1T share one wheelbase value today since there's no reliable way yet to tell them apart automatically. This defaults to the R1T's wheelbase (3.45m). Turn this on if you actually drive an R1S (3.08m) so steering calculations use the correct value. Off-road only; takes effect on your next drive.
     enablement:
     - $ref: '#/macros/offroad'
   - key: RivianOfftrackCompensationEnabled
     widget: toggle
-    title: Off-Tracking Compensation
-    description: On tight turns the rear wheels follow a smaller arc than the front, which can lead to curb strikes at sharp intersections. This widens the commanded turn slightly to compensate, based on your vehicle's wheelbase. It's a geometric estimate, not curb detection. Works on both the R1T and R1S; the longer R1T benefits more. Can only be changed while not driving.
+    title: Rear-Axle Off-Tracking Compensation (R1T)
+    description: Widens the commanded turn radius on tight turns to account for the R1T's long wheelbase, reducing rear-wheel curb strikes at sharp intersections. This is a geometric estimate, not curb sensing -- start conservative and validate before trusting it.
     enablement:
     - $ref: '#/macros/offroad'
     sub_items:
     - key: RivianOfftrackCompensationGain
       widget: option
       title: Compensation Gain
-      description: 'How much to compensate: 0 = none, 1 = full geometric correction. The default is 0.5. R1S owners should turn on "I Drive an R1S" so the correct wheelbase is used, and may prefer a lower setting.'
+      description: 0 = off, 1 = full geometric compensation. Start low and increase gradually while validating.
       min: 0.0
       max: 1.0
       step: 0.05
@@ -55,6 +55,12 @@ sections:
       - type: param
         key: RivianOfftrackCompensationEnabled
         equals: true
+  - key: RivianForceTorqueSteering
+    widget: toggle
+    title: Torque-Only Steering (Testing)
+    description: Steers on the torque channel for the whole drive instead of the angle channel. For collecting torque calibration data on a truck with the angle upgrade. Steering is weaker than in angle mode, especially in tight turns, so keep your hands on the wheel. Off-road only; takes effect on your next drive.
+    enablement:
+    - $ref: '#/macros/offroad'
 - id: subaru
   title: Subaru Settings
   description: ''

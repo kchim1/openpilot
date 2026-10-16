@@ -4,6 +4,13 @@ Copyright (c) 2021-, Haibin Wen, sunnypilot, and a number of other contributors.
 This file is part of sunnypilot and is licensed under the MIT License.
 See the LICENSE.md file in the root directory for more details.
 """
+from opendbc.car import structs
+
+# A car port sends this button event once per Traffic Mode toggle (Rivian: left thumb button held 1 s), and
+# selfdrived flips the TrafficMode param on it. ButtonEvent.Type has no dedicated value: leftBlinker is used because
+# no car port sends it as a button event and nothing in openpilot reacts to it. Not altButton2 or lkas: downstream
+# Rivian branches (gerrylum fix/stg-*) already send those for the ACC stalk.
+TRAFFIC_MODE_BUTTON = structs.CarState.ButtonEvent.Type.leftBlinker
 
 
 def crc8_pedal(data):

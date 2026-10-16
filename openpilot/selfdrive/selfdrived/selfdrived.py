@@ -682,6 +682,7 @@ class SelfdriveD(CruiseHelper):
       self.disengage_on_accelerator = self.params.get_bool("DisengageOnAccelerator")
       self.experimental_mode = self.params.get_bool("ExperimentalMode") and self.CP.openpilotLongitudinalControl
       self.personality = self.params.get("LongitudinalPersonality", return_default=True)
+      self.traffic_mode = self.read_traffic_mode()
 
       self.chestnut_loading = self.params.get_bool("ChestnutLoading")
       self.chestnut_active = self.params.get("ChestnutActive")

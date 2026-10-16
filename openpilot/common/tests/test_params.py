@@ -114,6 +114,15 @@ class TestParams(OpenpilotTestCase):
     assert len(keys) == len(set(keys))
     assert b"CarParams" in keys
 
+  def test_params_all_keys_by_flag(self):
+    all_keys = set(Params().all_keys())
+    for flag in (ParamKeyFlag.PERSISTENT, ParamKeyFlag.BACKUP):
+      keys = Params().all_keys(flag)
+      assert len(keys) > 20
+      assert len(keys) == len(set(keys))
+      assert set(keys) <= all_keys
+    assert b"LongitudinalPersonality" in Params().all_keys(ParamKeyFlag.BACKUP)
+
   def test_params_default_value(self):
     self.params.remove("LanguageSetting")
     self.params.remove("LongitudinalPersonality")

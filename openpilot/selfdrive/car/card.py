@@ -122,6 +122,16 @@ class Car:
       self.CI, self.CP, self.CP_SP = CI, CI.CP, CI.CP_SP
       self.RI = RI
 
+    # Rivian: optional torque-only steering, read once per drive (the toggle is offroad only)
+    erc = getattr(self.CI.CC, 'erc', None)
+    if self.CP.brand == 'rivian' and erc is not None:
+      try:
+        erc.force_torque = self.params.get_bool("RivianForceTorqueSteering")
+      except Exception:
+        # e.g. a prebuilt whose params library predates the key: stay on the normal angle/torque hybrid
+        cloudlog.exception("RivianForceTorqueSteering unreadable, using default steering mode")
+      cloudlog.event("rivian steering mode", force_torque=bool(erc.force_torque))
+
     self.CP.alternativeExperience = 0
     # mads
     set_alternative_experience(self.CP, self.CP_SP, self.params)

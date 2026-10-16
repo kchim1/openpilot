@@ -204,6 +204,7 @@ struct LongitudinalPlanSP @0xf35cc4560bbf6ec2 {
   aTarget @5 :Float32;
   events @6 :List(OnroadEventSP.Event);
   e2eAlerts @7 :E2eAlerts;
+  followDistance @8 :FollowDistance;
 
   struct DynamicExperimentalControl {
     state @0 :DynamicExperimentalControlState;
@@ -306,6 +307,13 @@ struct LongitudinalPlanSP @0xf35cc4560bbf6ec2 {
     greenLightAlert @0 :Bool;
     leadDepartAlert @1 :Bool;
   }
+
+  struct FollowDistance {
+    trafficMode @0 :Bool;
+    tFollow @1 :Float32;     # follow time passed to the MPC this frame (s)
+    offsetPct @2 :Float32;   # SPFollowingTimeOffset applied (%), 0 while Traffic Mode is on
+    jerkFactor @3 :Float32;
+  }
 }
 
 struct OnroadEventSP @0xda96579883444c35 {
@@ -354,6 +362,8 @@ struct OnroadEventSP @0xda96579883444c35 {
     e2eChime @23;
     laneChangeRoadEdge @24;
     bigModelReady @25;
+    trafficModeOn @26;
+    trafficModeOff @27;
   }
 }
 

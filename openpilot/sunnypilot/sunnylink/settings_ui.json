@@ -653,6 +653,60 @@
               ]
             },
             {
+              "key": "SPFollowingTimeOffset",
+              "widget": "option",
+              "needs_onroad_cycle": true,
+              "title": "Following Distance Offset",
+              "description": "Adjusts the gap to the car ahead in every driving personality, from -10% (closer) to +10% (further) in 2% steps. 0 is no change. With Experimental mode off, on Aggressive at 70 mph each 2% step is about 2.6 ft (10% is about 13 ft). In Experimental mode the driving model can keep its own gap, so the change may be smaller or not noticeable. Takes effect on the next drive.",
+              "min": -10,
+              "max": 10,
+              "step": 2,
+              "unit": "%",
+              "enablement": [
+                {
+                  "type": "offroad_only"
+                },
+                {
+                  "type": "capability",
+                  "field": "has_longitudinal_control",
+                  "equals": true
+                }
+              ]
+            },
+            {
+              "key": "TrafficMode",
+              "widget": "toggle",
+              "title": "Traffic Mode",
+              "description": "Shorter gap for stop-and-go traffic: about 0.5 s behind the car ahead when nearly stopped, rising to 1.0 s from about 11 mph and staying at 1.0 s at every speed until turned off (Aggressive is 1.25 s). Ignores Following Distance Offset while on. Hold the left thumb button on the steering wheel for 1 second to toggle. Turns off at the end of every drive.",
+              "enablement": [
+                {
+                  "type": "capability",
+                  "field": "has_longitudinal_control",
+                  "equals": true
+                }
+              ]
+            },
+            {
+              "key": "RivianLaunchAssist",
+              "widget": "toggle",
+              "title": "Launch Assist",
+              "description": "Starts the truck moving sooner when the car ahead pulls away from a stop. Once the truck has been stopped behind a radar-tracked car for a second and that car starts moving away, sunnypilot briefly raises its request to 0.5 m/s\u00b2 (under a second, ending sooner once the truck matches the car's speed) to get past the truck's standstill dead zone, then eases back to the normal plan. Once moving it accelerates as before. Because it starts sooner, the truck may also follow a car that only inches forward and stops. Rivian with sunnypilot longitudinal only. Can be changed while driving.",
+              "visibility": [
+                {
+                  "type": "capability",
+                  "field": "brand",
+                  "equals": "rivian"
+                }
+              ],
+              "enablement": [
+                {
+                  "type": "capability",
+                  "field": "has_longitudinal_control",
+                  "equals": true
+                }
+              ]
+            },
+            {
               "key": "IntelligentCruiseButtonManagement",
               "widget": "toggle",
               "title": "Intelligent Cruise Button Management (ICBM) (Alpha)",
@@ -2217,8 +2271,8 @@
         {
           "key": "RivianR1SWheelbase",
           "widget": "toggle",
-          "title": "I Drive an R1S",
-          "description": "The R1S and R1T have different wheelbases (3.08 m and 3.45 m), and currently openpilot can't tell them apart. It assumes an R1T by default. Turn this on if you drive an R1S so steering calculations use the correct wheelbase. Can only be changed while not driving; takes effect on your next drive.",
+          "title": "I Drive an R1S (not R1T)",
+          "description": "R1S and R1T share one wheelbase value today since there's no reliable way yet to tell them apart automatically. This defaults to the R1T's wheelbase (3.45m). Turn this on if you actually drive an R1S (3.08m) so steering calculations use the correct value. Off-road only; takes effect on your next drive.",
           "enablement": [
             {
               "type": "offroad_only"
@@ -2228,8 +2282,8 @@
         {
           "key": "RivianOfftrackCompensationEnabled",
           "widget": "toggle",
-          "title": "Off-Tracking Compensation",
-          "description": "On tight turns the rear wheels follow a smaller arc than the front, which can lead to curb strikes at sharp intersections. This widens the commanded turn slightly to compensate, based on your vehicle's wheelbase. It's a geometric estimate, not curb detection. Works on both the R1T and R1S; the longer R1T benefits more. Can only be changed while not driving.",
+          "title": "Rear-Axle Off-Tracking Compensation (R1T)",
+          "description": "Widens the commanded turn radius on tight turns to account for the R1T's long wheelbase, reducing rear-wheel curb strikes at sharp intersections. This is a geometric estimate, not curb sensing -- start conservative and validate before trusting it.",
           "enablement": [
             {
               "type": "offroad_only"
@@ -2240,7 +2294,7 @@
               "key": "RivianOfftrackCompensationGain",
               "widget": "option",
               "title": "Compensation Gain",
-              "description": "How much to compensate: 0 = none, 1 = full geometric correction. The default is 0.5. R1S owners should turn on \"I Drive an R1S\" so the correct wheelbase is used, and may prefer a lower setting.",
+              "description": "0 = off, 1 = full geometric compensation. Start low and increase gradually while validating.",
               "min": 0.0,
               "max": 1.0,
               "step": 0.05,
@@ -2251,6 +2305,17 @@
                   "equals": true
                 }
               ]
+            }
+          ]
+        },
+        {
+          "key": "RivianForceTorqueSteering",
+          "widget": "toggle",
+          "title": "Torque-Only Steering (Testing)",
+          "description": "Steers on the torque channel for the whole drive instead of the angle channel. For collecting torque calibration data on a truck with the angle upgrade. Steering is weaker than in angle mode, especially in tight turns, so keep your hands on the wheel. Off-road only; takes effect on your next drive.",
+          "enablement": [
+            {
+              "type": "offroad_only"
             }
           ]
         }
