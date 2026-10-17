@@ -43,8 +43,9 @@ class CarInterface(CarInterfaceBase):
 
     ret.longitudinalActuatorDelay = 0.25
     ret.stopAccel = -0.2
-    ret.longitudinalTuning.kiBP = [0.]
-    ret.longitudinalTuning.kiV = [0.2]
+    # no integral term, like upstream: the truck tracks the accel request itself. Braking from speed it overshot the
+    # request by ~0.3 m/s^2, an integrator learned to ask for that much less, and the stale offset then roughly halved
+    # the braking over the last few mph to a red light, so the truck crept ~2.5 m past where the model meant to stop
 
     return ret
 

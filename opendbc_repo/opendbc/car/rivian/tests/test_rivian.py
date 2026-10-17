@@ -164,3 +164,15 @@ class TestDeclinedEngagePress(unittest.TestCase):
     D = GearShifter.drive
     for gear_after in (GearShifter.park, GearShifter.neutral, GearShifter.reverse):
       self.assertEqual(self._run(D, 0.0, gear_after=gear_after, shift_at=20), [])
+
+
+class TestCruiseAccelBias:
+  def test_only_cruising_at_highway_speed(self):
+    from opendbc.car.rivian.carcontroller import cruise_accel_bias, CRUISE_ACCEL_BIAS
+    assert cruise_accel_bias(10., 0.) == 0.
+    assert cruise_accel_bias(25., 0.3) == CRUISE_ACCEL_BIAS
+    assert cruise_accel_bias(25., -0.2) == CRUISE_ACCEL_BIAS
+    assert 0. < cruise_accel_bias(18.5, 0.) < CRUISE_ACCEL_BIAS
+    # braking is left alone, with a fade rather than a step
+    assert cruise_accel_bias(25., -1.5) == 0.
+    assert 0. < cruise_accel_bias(25., -0.75) < CRUISE_ACCEL_BIAS
