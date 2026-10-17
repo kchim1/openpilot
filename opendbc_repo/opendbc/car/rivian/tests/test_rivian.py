@@ -5,6 +5,7 @@ from types import SimpleNamespace
 from opendbc.car import Bus, structs
 from opendbc.car.rivian.ext_controller import ExternalController, MIN_TORQUE_FRAMES, HANDS_OFF_EXIT_FRAMES
 from opendbc.car.rivian.fingerprints import FW_VERSIONS
+from opendbc.car.rivian.carcontroller import ACM_ENGAGE_TIMEOUT_FRAMES
 from opendbc.car.rivian.interface import CarInterface
 from opendbc.car.rivian.values import CAR, FW_QUERY_CONFIG, WMI, ModelLine, ModelYear
 
@@ -107,3 +108,53 @@ class TestBlockedEngagePress(unittest.TestCase):
     self.assertEqual(self._run([(D, 0), (D, 4), (D, 0), (D, 4), (D, 0)]), [1, 3])
     # openpilot can engage: the press goes to the ACM, nothing to report
     self.assertEqual(self._run([(D, 0), (D, 4), (D, 0)], engageable=True), [])
+
+
+class TestDeclinedEngagePress(unittest.TestCase):
+  """An ACC-on press in Drive that the stock ACM does not take within 0.5 s is reported once, with a reason."""
+
+  @staticmethod
+  def _run(gear, v_ego, request=4, acc_engages_at=None, fault_supervisor_state=0):
+    # one stalk press (VDM_UserAdasRequest 0 -> request -> 0), then frames until past the timeout.
+    # Returns every engage_request_refused reason raised
+    CP = CarInterface.get_non_essential_params(CAR.RIVIAN_R1)
+    CP.openpilotLongitudinalControl = True
+    CI = CarInterface(CP, structs.CarParamsSP())
+    CC, CS = CI.CC, CI.CS
+    CC.openpilot_engageable = True
+    CS.acm_lka_hba_cmd = copy.copy(CI.can_parsers[Bus.cam].vl["ACM_lkaHbaCmd"])
+    CS.sccm_wheel_touch = copy.copy(CI.can_parsers[Bus.pt].vl["SCCM_WheelTouch"])
+    CS.acm_fault_supervisor_state = fault_supervisor_state
+    adas_status = copy.copy(CI.can_parsers[Bus.pt].vl["VDM_AdasSts"])
+    car_control = structs.CarControl().as_reader()
+
+    refused = []
+    for frame in range(ACM_ENGAGE_TIMEOUT_FRAMES + 20):
+      enabled = acc_engages_at is not None and frame >= acc_engages_at
+      CS.out = structs.CarState(gearShifter=gear, vEgo=v_ego, vEgoRaw=v_ego, cruiseState={"enabled": enabled})
+      CS.vdm_adas_status = [dict(adas_status, VDM_UserAdasRequest=request if 1 <= frame <= 5 else 0)]
+      CC.update(car_control, structs.CarControlSP(), CS, 0)
+      if CC.engage_request_refused is not None:
+        refused.append(CC.engage_request_refused)
+        CC.engage_request_refused = None
+    return refused
+
+  def test_declined_below_20_mph_in_drive(self):
+    D = GearShifter.drive
+    for request in (3, 4):
+      self.assertEqual(self._run(D, 7.5, request), ["lowSpeed"])  # 16.8 mph, route 539e9b3496be3ce9/00000008
+    self.assertEqual(self._run(D, 0.0), ["lowSpeed"])
+
+  def test_not_ready_takes_precedence(self):
+    self.assertEqual(self._run(GearShifter.drive, 7.5, fault_supervisor_state=2), ["notReady"])
+
+  def test_accepted_press_is_not_reported(self):
+    self.assertEqual(self._run(GearShifter.drive, 7.5, acc_engages_at=4), [])
+
+  def test_declined_at_20_mph_and_above_stays_silent(self):
+    self.assertEqual(self._run(GearShifter.drive, 9.0), [])
+
+  def test_stalk_down_out_of_drive_is_a_gear_change(self):
+    for gear in (GearShifter.park, GearShifter.reverse, GearShifter.neutral):
+      self.assertEqual(self._run(gear, 0.0), [])
+      self.assertEqual(self._run(gear, 3.0), [])

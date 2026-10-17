@@ -91,7 +91,7 @@ class CarEvents:
           events.add(EventName.speedTooLow)
 
     elif self.CP.brand == 'rivian':
-      # set by card for one frame when the stock ACM declined an ACC press below its minimum speed
+      # set by card for one frame when the stock ACM declined an ACC press below 20 mph
       if CS.blockPcmEnable:
         events.add(EventName.belowEngageSpeed)
 

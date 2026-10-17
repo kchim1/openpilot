@@ -213,7 +213,7 @@ class Car:
       CS.buttonEnable = True
 
     # An ACC engage press openpilot passed on but the stock cruise ECU declined (Rivian ACM not ready yet, or below
-    # its minimum speed without a lead). Surface it the same way with a NO_ENTRY reason, so the driver sees why.
+    # 20 mph). Surface it the same way with a NO_ENTRY reason, so the driver sees why.
     refused = getattr(self.CI.CC, 'engage_request_refused', None)
     if refused is not None:
       self.CI.CC.engage_request_refused = None
