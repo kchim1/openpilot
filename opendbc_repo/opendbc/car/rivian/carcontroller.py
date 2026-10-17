@@ -110,7 +110,8 @@ class CarController(CarControllerBase, MadsCarController):
 
       # the ACM declined the press: tell the driver the likely reason, the truck only says ACC is not available
       if self.engage_press_frames > 0:
-        if CS.out.cruiseState.enabled:
+        # the ACM took it, or the driver shifted out of Drive: nothing to report
+        if CS.out.cruiseState.enabled or CS.out.gearShifter != GearShifter.drive:
           self.engage_press_frames = 0
         else:
           self.engage_press_not_ready |= CS.acm_fault_supervisor_state != 0

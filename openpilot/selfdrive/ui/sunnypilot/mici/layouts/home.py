@@ -43,11 +43,13 @@ class MiciHomeLayoutSP(MiciHomeLayout):
                                     chestnut_state in (ChestnutState.READY, ChestnutState.ACTIVE))
     self._chestnut_failed_icon.set_visible(not usb_unknown and chestnut_state in (ChestnutState.UNCOMPILED, ChestnutState.FAILED))
 
-  # ***** Traffic Mode button: offroad only, so it can never be switched by touch while driving *****
-  # (onroad, a tap on the road view brings this screen up, so the button hides as soon as the car is started)
+  # ***** Traffic Mode button: offroad with the ignition off, so it can never be switched by touch while driving *****
+  # (onroad, a tap on the road view brings this screen up. openpilot can also be offroad while the car is driven:
+  # Always Offroad, an overheating device, a panda timeout. The ignition covers those, for Rivian it is
+  # VDM_EpasPowerMode == Drive_On, and it keeps its last value if the panda stops reporting)
   @staticmethod
   def _traffic_mode_button_visible() -> bool:
-    return not ui_state.started and ui_state.has_longitudinal_control and not ui_state.is_body
+    return not ui_state.started and not ui_state.ignition and ui_state.has_longitudinal_control and not ui_state.is_body
 
   def _traffic_mode_center(self) -> rl.Vector2:
     return rl.Vector2(self.rect.x + self.rect.width - TRAFFIC_MODE_BUTTON_MARGIN - TRAFFIC_MODE_BADGE_SIZE / 2,

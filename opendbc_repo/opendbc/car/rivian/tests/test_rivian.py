@@ -114,7 +114,7 @@ class TestDeclinedEngagePress(unittest.TestCase):
   """An ACC-on press in Drive that the stock ACM does not take within 0.5 s is reported once, with a reason."""
 
   @staticmethod
-  def _run(gear, v_ego, request=4, acc_engages_at=None, fault_supervisor_state=0):
+  def _run(gear, v_ego, request=4, acc_engages_at=None, fault_supervisor_state=0, gear_after=None, shift_at=None):
     # one stalk press (VDM_UserAdasRequest 0 -> request -> 0), then frames until past the timeout.
     # Returns every engage_request_refused reason raised
     CP = CarInterface.get_non_essential_params(CAR.RIVIAN_R1)
@@ -131,7 +131,8 @@ class TestDeclinedEngagePress(unittest.TestCase):
     refused = []
     for frame in range(ACM_ENGAGE_TIMEOUT_FRAMES + 20):
       enabled = acc_engages_at is not None and frame >= acc_engages_at
-      CS.out = structs.CarState(gearShifter=gear, vEgo=v_ego, vEgoRaw=v_ego, cruiseState={"enabled": enabled})
+      gear_now = gear_after if shift_at is not None and frame >= shift_at else gear
+      CS.out = structs.CarState(gearShifter=gear_now, vEgo=v_ego, vEgoRaw=v_ego, cruiseState={"enabled": enabled})
       CS.vdm_adas_status = [dict(adas_status, VDM_UserAdasRequest=request if 1 <= frame <= 5 else 0)]
       CC.update(car_control, structs.CarControlSP(), CS, 0)
       if CC.engage_request_refused is not None:
@@ -158,3 +159,8 @@ class TestDeclinedEngagePress(unittest.TestCase):
     for gear in (GearShifter.park, GearShifter.reverse, GearShifter.neutral):
       self.assertEqual(self._run(gear, 0.0), [])
       self.assertEqual(self._run(gear, 3.0), [])
+
+  def test_shifting_out_of_drive_cancels_the_report(self):
+    D = GearShifter.drive
+    for gear_after in (GearShifter.park, GearShifter.neutral, GearShifter.reverse):
+      self.assertEqual(self._run(D, 0.0, gear_after=gear_after, shift_at=20), [])
