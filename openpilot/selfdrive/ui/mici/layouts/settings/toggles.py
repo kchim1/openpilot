@@ -61,8 +61,9 @@ class TogglesLayoutMici(NavScroller):
                                                               "About 0.5 s when nearly stopped, 1.0 s from 11 mph.\n" +
                                                               "Stays at 1.0 s at every speed until turned off.\n" +
                                                               "Ignores the following distance offset.\n" +
-                                                              "Hold the left thumb button 1 s to toggle.\n" +
-                                                              "Turns off at the end of every drive.")
+                                                              "Hold the left thumb button 1 s to toggle,\n" +
+                                                              "or tap the T on the home screen when off-road.\n" +
+                                                              "Stays on or off until you change it.")
     except UnknownKeyName:
       self._traffic_mode_toggle = None
     self._traffic_mode = ui_state.traffic_mode
@@ -138,7 +139,7 @@ class TogglesLayoutMici(NavScroller):
         self._personality_toggle.set_value(self._personality_toggle._options[personality])
       ui_state.personality = personality
 
-    # mirror Traffic Mode changes made elsewhere while this page is open: steering wheel, sunnylink, end of drive
+    # mirror Traffic Mode changes made elsewhere while this page is open: steering wheel, sunnylink
     if self._traffic_mode_toggle is not None and ui_state.traffic_mode != self._traffic_mode:
       self._traffic_mode = ui_state.traffic_mode
       self._traffic_mode_toggle.set_checked(self._traffic_mode)

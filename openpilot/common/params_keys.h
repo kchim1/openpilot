@@ -286,8 +286,8 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     {"SPFollowingTimeOffset", {PERSISTENT | BACKUP, INT, "0"}},
 
     // Traffic Mode: shorter follow time for stop-and-go traffic, ignores SPFollowingTimeOffset while on.
-    // Switchable while driving (plannerd re-reads it every 0.25 s); cleared at the end of every drive and on boot.
-    {"TrafficMode", {CLEAR_ON_MANAGER_START | CLEAR_ON_OFFROAD_TRANSITION, BOOL, "0"}},
+    // Switchable while driving (plannerd re-reads it every 0.25 s); stays as set across drives and reboots.
+    {"TrafficMode", {PERSISTENT | BACKUP, BOOL, "0"}},
 
     // Smart Cruise Control
     {"MapTargetVelocities", {CLEAR_ON_ONROAD_TRANSITION, STRING}},

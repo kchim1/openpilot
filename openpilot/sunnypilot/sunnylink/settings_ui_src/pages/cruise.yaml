@@ -63,8 +63,8 @@ sections:
     title: Traffic Mode
     description: 'Shorter gap for stop-and-go traffic: about 0.5 s behind the car ahead when nearly stopped, rising
       to 1.0 s from about 11 mph and staying at 1.0 s at every speed until turned off (Aggressive is 1.25 s). Ignores
-      Following Distance Offset while on. Hold the left thumb button on the steering wheel for 1 second to toggle.
-      Turns off at the end of every drive.'
+      Following Distance Offset while on. Hold the left thumb button on the steering wheel for 1 second to toggle,
+      or tap the T on the comma four home screen while the truck is off. Stays on or off until you change it.'
     enablement:
     - $ref: '#/macros/longitudinal'
   - key: RivianLaunchAssist
