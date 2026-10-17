@@ -14,7 +14,7 @@ GearShifter = structs.CarState.GearShifter
 
 # The stock ACM answers an ACC stalk press within ~30 ms when it takes it. If it hasn't after this long, it declined.
 ACM_ENGAGE_TIMEOUT_FRAMES = 50  # 0.5 s
-# The stock ACM refuses ACC below this speed unless it has a lead
+# The stock ACM has been seen to decline ACC below this speed, even with a car ahead
 ACM_MIN_ENGAGE_SPEED = 20 * CV.MPH_TO_MS
 
 
@@ -33,7 +33,7 @@ class CarController(CarControllerBase, MadsCarController):
     self.engage_request_blocked = False
     self.engage_request_prev = False
     # set here when the ACM declined a driver ACC engage press that openpilot passed on; card reads and clears it.
-    # 'notReady': the ACM was not ready (ACM_FaultSupervisorState != 0), 'lowSpeed': below its minimum speed, no lead
+    # 'notReady': the ACM was not ready (ACM_FaultSupervisorState != 0), 'lowSpeed': declined below ACM_MIN_ENGAGE_SPEED
     self.engage_request_refused = None
     self.engage_press_frames = 0
     self.engage_press_not_ready = False
@@ -101,8 +101,8 @@ class CarController(CarControllerBase, MadsCarController):
         if block_engage and acc_on_request and in_drive and not self.engage_request_prev:
           self.engage_request_blocked = True
 
-        # an ACC-on press (stalk down) that openpilot passes to the ACM: watch whether the ACM takes it
-        if acc_on_request and not self.engage_request_prev and not block_engage and not CS.out.cruiseState.enabled:
+        # an ACC-on press (stalk down in Drive) that openpilot passes to the ACM: watch whether the ACM takes it
+        if acc_on_request and in_drive and not self.engage_request_prev and not block_engage and not CS.out.cruiseState.enabled:
           self.engage_press_frames = 1
           self.engage_press_not_ready = False
           self.engage_press_low_speed = CS.out.vEgo < ACM_MIN_ENGAGE_SPEED
@@ -110,7 +110,8 @@ class CarController(CarControllerBase, MadsCarController):
 
       # the ACM declined the press: tell the driver the likely reason, the truck only says ACC is not available
       if self.engage_press_frames > 0:
-        if CS.out.cruiseState.enabled:
+        # the ACM took it, or the driver shifted out of Drive: nothing to report
+        if CS.out.cruiseState.enabled or CS.out.gearShifter != GearShifter.drive:
           self.engage_press_frames = 0
         else:
           self.engage_press_not_ready |= CS.acm_fault_supervisor_state != 0

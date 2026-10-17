@@ -9,7 +9,7 @@ import time
 from openpilot.cereal import custom, log
 from opendbc.car.structs import car
 from opendbc.sunnypilot.car import TRAFFIC_MODE_BUTTON
-from openpilot.common.params import Params, UnknownKeyName
+from openpilot.common.params import Params, ParamKeyFlag, UnknownKeyName
 from openpilot.common.realtime import DT_CTRL
 from openpilot.common.test import OpenpilotTestCase
 from openpilot.selfdrive.selfdrived.alertmanager import AlertManager
@@ -56,6 +56,28 @@ def current_alerts(alert_types, add_events, frames=400):
     AM.process_alerts(frame, clear_event_types)
     current.append(AM.current_alert)
   return current
+
+
+class TestTrafficModePersistence(OpenpilotTestCase):
+  """Traffic Mode stays as the driver left it: not reset at the end of a drive or when the device restarts."""
+  def test_survives_drive_end_and_reboot(self):
+    params = Params()
+    for on in (True, False):
+      params.put_bool("TrafficMode", on, block=True)
+      # what manager does at start, and on every onroad/offroad transition and ignition on
+      for flag in (ParamKeyFlag.CLEAR_ON_MANAGER_START, ParamKeyFlag.CLEAR_ON_ONROAD_TRANSITION,
+                   ParamKeyFlag.CLEAR_ON_OFFROAD_TRANSITION, ParamKeyFlag.CLEAR_ON_IGNITION_ON):
+        params.clear_all(flag)
+      assert params.get_bool("TrafficMode") is on
+
+  def test_persistent_and_backed_up(self):
+    assert b"TrafficMode" in Params().all_keys(ParamKeyFlag.PERSISTENT)
+    assert b"TrafficMode" in Params().all_keys(ParamKeyFlag.BACKUP)
+
+  def test_defaults_off(self):
+    params = Params()
+    params.remove("TrafficMode")
+    assert params.get_bool("TrafficMode") is False
 
 
 class TestTrafficModeAlert(OpenpilotTestCase):

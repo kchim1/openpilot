@@ -35,7 +35,7 @@ FOLLOWING_TIME_OFFSET_DESCRIPTION = tr_noop("Adjusts the gap to the car ahead in
 TRAFFIC_MODE_DESCRIPTION = tr_noop("Shorter gap for stop-and-go traffic: about 0.5 s behind the car ahead when nearly stopped, " +
                                    "rising to 1.0 s from about 11 mph and staying at 1.0 s at every speed until turned off " +
                                    "(Aggressive is 1.25 s). Ignores Following Distance Offset while on. Hold the left thumb " +
-                                   "button on the steering wheel for 1 second to toggle. Turns off at the end of every drive.")
+                                   "button on the steering wheel for 1 second to toggle. Stays on or off until you change it.")
 
 
 def _following_time_offset_label(value: int) -> str:
@@ -200,7 +200,7 @@ class CruiseLayout(Widget):
       self.traffic_mode_toggle.action_item.set_enabled(False)
       self.icbm_toggle.set_description(tr(ONROAD_ONLY_DESCRIPTION))
 
-    # mirror Traffic Mode changes made elsewhere: steering wheel, sunnylink, cleared at the end of a drive
+    # mirror Traffic Mode changes made elsewhere: steering wheel, sunnylink
     if ui_state.traffic_mode != self._traffic_mode:
       self._traffic_mode = ui_state.traffic_mode
       self.traffic_mode_toggle.action_item.set_state(self._traffic_mode)

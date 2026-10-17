@@ -76,8 +76,9 @@ def startup_master_alert(CP: car.CarParams, CS: car.CarState, sm: messaging.SubM
 
 def below_engage_speed_alert(CP: car.CarParams, CS: car.CarState, sm: messaging.SubMaster, metric: bool, soft_disable_time: int, personality) -> Alert:
   if CP.brand == 'rivian':
-    # the stock ACM, which openpilot engages through, refuses ACC below 20 mph unless it has a lead
-    return NoEntryAlert(f"ACC Needs {get_display_speed(20 * CV.MPH_TO_MS, metric)} or a Lead Car")
+    # the stock ACM, which openpilot engages through, declined an ACC press below 20 mph. It gives no reason, and it has
+    # declined with a car ahead too, so don't guess one
+    return NoEntryAlert("Rivian ACC Declined")
   return NoEntryAlert(f"Drive above {get_display_speed(CP.minEnableSpeed, metric)} to engage")
 
 
