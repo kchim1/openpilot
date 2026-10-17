@@ -19,6 +19,13 @@ from openpilot.sunnypilot.selfdrive.controls.lib.longitudinal_planner import Lon
 
 A_CRUISE_MAX_VALS = [1.6, 1.2, 0.8, 0.6]
 A_CRUISE_MAX_BP = [0., 10.0, 25., 40.]
+# Keep Up With Traffic: the cap while following a moving radar lead, so the lead planner can hold the gap behind a car
+# that pulls away briskly. The MPC still decides how much of it to use; 2.0 is also the Rivian request limit.
+# follow_share (0 to 1, set by the sunnypilot planner from the personality and how far the gap is past the desired one)
+# is how much of the step from the stock cap it gets. Tuned with the Rivian long integral term removed: with it, a lead
+# that pulls away and then brakes hard left too little gap in sim
+A_FOLLOW_MAX_VALS = [2.0, 2.0, 1.4, 1.0]
+A_FOLLOW_TOTAL_MAX = 2.0
 J_CRUISE_VALS = [1.6, 1.2, 0.8, 0.6]
 A_CRUISE_MIN = -1.2
 CONTROL_N_T_IDX = ModelConstants.T_IDXS[:CONTROL_N]
@@ -29,18 +36,24 @@ MIN_ALLOW_THROTTLE_SPEED = 2.5
 _A_TOTAL_MAX_V = [1.7, 3.2]
 _A_TOTAL_MAX_BP = [20., 40.]
 
-def get_max_accel(v_ego):
-  return np.interp(v_ego, A_CRUISE_MAX_BP, A_CRUISE_MAX_VALS)
+def get_max_accel(v_ego, follow_share=0.):
+  max_accel = np.interp(v_ego, A_CRUISE_MAX_BP, A_CRUISE_MAX_VALS)
+  if follow_share > 0.:
+    max_accel += follow_share * (np.interp(v_ego, A_CRUISE_MAX_BP, A_FOLLOW_MAX_VALS) - max_accel)
+  return max_accel
 
 def get_coast_accel(pitch):
   return np.sin(pitch) * -5.65 - 0.3  # fitted from data using xx/projects/allow_throttle/compute_coast_accel.py
 
-def get_cruise_accel(e2e, v_cruise, v_ego, a_cruise_prev, angle_steers, CP, dt, accel_coast, allow_throttle):
-  max_accel = ACCEL_MAX if e2e else get_max_accel(v_ego)
+def get_cruise_accel(e2e, v_cruise, v_ego, a_cruise_prev, angle_steers, CP, dt, accel_coast, allow_throttle, follow_share=0.):
+  max_accel = ACCEL_MAX if e2e else get_max_accel(v_ego, follow_share)
 
   if not e2e:
     a_total_max = np.interp(v_ego, _A_TOTAL_MAX_BP, _A_TOTAL_MAX_V)
     a_y = v_ego ** 2 * angle_steers * CV.DEG_TO_RAD / (CP.steerRatio * CP.wheelbase)
+    if follow_share > 0.:
+      # the higher total is for nearly straight roads only: gone by 1 m/s^2 lateral, so curves keep the stock limit
+      a_total_max += follow_share * max(A_FOLLOW_TOTAL_MAX - a_total_max, 0.) * float(np.interp(abs(a_y), [0.5, 1.0], [1., 0.]))
     a_x_allowed = math.sqrt(max(a_total_max ** 2 - a_y ** 2, 0.))
     max_accel = min(max_accel, a_x_allowed)
     if not allow_throttle:
@@ -142,13 +155,19 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
 
     self.a_cruise = get_cruise_accel(is_e2e, v_cruise, v_ego,
                                      self.a_cruise, steer_angle_without_offset, self.CP, self.dt,
-                                     accel_coast, self.allow_throttle)
+                                     accel_coast, self.allow_throttle,
+                                     self.keep_pace(sm['radarState'].leadOne, sm['selfdriveState'].personality, v_ego))
     cruise_should_stop = should_stop(v_ego, self.a_cruise)
 
     candidates = [(output_a_target_mpc, self.mpc.source, output_should_stop_mpc),
                   (self.a_cruise, LongitudinalPlanSource.cruise, cruise_should_stop)]
     if is_e2e:
       candidates.append((output_a_target_e2e, LongitudinalPlanSource.e2e, output_should_stop_e2e))
+    # Red Light Stop Distance: extra braking on top of the model's to stop short of its stop point at a red light
+    red_light = self.red_light_stop.update(is_e2e, v_ego, output_a_target_e2e, sm['modelV2'], sm['radarState'].leadOne,
+                                           long_off=reset_state)
+    if red_light is not None:
+      candidates.append((red_light[0], LongitudinalPlanSource.e2e, red_light[1]))
 
     output_a_target, self.mpc.source, _ = min(candidates, key=lambda c: c[0])
     self.output_should_stop = any(should_stop for _, _, should_stop in candidates)

@@ -67,6 +67,43 @@ sections:
       or tap the T on the comma four home screen while the truck is off. Stays on or off until you change it.'
     enablement:
     - $ref: '#/macros/longitudinal'
+  - key: RedLightStopDistance
+    widget: option
+    title: Red Light Stop Distance
+    description: Stops this far short of where the driving model would stop for a red light (or a stop sign).
+      Experimental Mode only, the only mode that stops for lights, and not when stopping behind a car. It adds braking
+      on top of the model's, mostly in the last few seconds, never more than 1 m/s² extra, and holds the stop instead
+      of creeping up to the line, unless the model keeps asking to creep for 3 seconds. Off leaves the model's stop as
+      is. Can be changed while driving.
+    options:
+    - value: 0
+      label: 'Off'
+    - value: 1
+      label: 1 m (3 ft)
+    - value: 2
+      label: 2 m (7 ft)
+    - value: 3
+      label: 3 m (10 ft)
+    - value: 4
+      label: 4 m (13 ft)
+    - value: 5
+      label: 5 m (16 ft)
+    enablement:
+    - $ref: '#/macros/longitudinal'
+  - key: KeepPaceWithTraffic
+    widget: toggle
+    title: Keep Up With Traffic
+    description: When a car the radar is tracking pulls away and the gap grows past your following distance,
+      sunnypilot may accelerate harder to close it, instead of letting it open up. It builds up over the first 30 ft or
+      so past your following distance, and tapers to half the increase from 22 to 45 mph. How much depends on Driving
+      Personality. Aggressive goes up to 2.0 m/s² (about 0.2 g) from a stop and at 22 mph, 1.1 at 56 mph. Standard gets
+      half of that increase (1.8, 1.6, 0.95) and Relaxed a quarter (1.7, 1.4, 0.9), against the default cap of 1.6 m/s²
+      from a stop, 1.2 at 22 mph and 0.8 at 56 mph.
+      Only on fairly straight roads, and not while the driving model is in control (Experimental Mode or Dynamic
+      Experimental Control in its end-to-end mode). Braking and your following distance are unchanged, and with no car
+      ahead the default cap stays. Can be changed while driving.
+    enablement:
+    - $ref: '#/macros/longitudinal'
   - key: RivianLaunchAssist
     widget: toggle
     title: Launch Assist

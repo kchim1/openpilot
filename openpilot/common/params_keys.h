@@ -289,6 +289,14 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     // Switchable while driving (plannerd re-reads it every 0.25 s); stays as set across drives and reboots.
     {"TrafficMode", {PERSISTENT | BACKUP, BOOL, "0"}},
 
+    // Red Light Stop Distance: meters to stop short of where the driving model plans to stop for a red light, 0 to 5.
+    // End to end longitudinal only (Experimental Mode). plannerd re-reads it every 1 s.
+    {"RedLightStopDistance", {PERSISTENT | BACKUP, INT, "1"}},
+
+    // Keep Up With Traffic: higher accel cap while following a moving radar lead (sunnypilot longitudinal).
+    // plannerd re-reads it every 1 s.
+    {"KeepPaceWithTraffic", {PERSISTENT | BACKUP, BOOL, "1"}},
+
     // Smart Cruise Control
     {"MapTargetVelocities", {CLEAR_ON_ONROAD_TRANSITION, STRING}},
     {"SmartCruiseControlMap", {PERSISTENT | BACKUP, BOOL, "0"}},
