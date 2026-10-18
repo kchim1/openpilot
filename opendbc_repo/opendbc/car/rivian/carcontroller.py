@@ -17,6 +17,15 @@ ACM_ENGAGE_TIMEOUT_FRAMES = 50  # 0.5 s
 # The stock ACM has been seen to decline ACC below this speed, even with a car ahead
 ACM_MIN_ENGAGE_SPEED = 20 * CV.MPH_TO_MS
 
+# Cruising at highway speed the truck delivers ~0.08 m/s^2 more than requested, the same on grades from -2% to +4% (routes
+# 00000008 and 0000000e). With no long integrator to cancel it, leads would be followed ~10-15% closer, so ask for that
+# much less there. Faded in from 15 to 22 m/s, and out from -0.5 to -1.0 m/s^2 so braking is untouched.
+CRUISE_ACCEL_BIAS = 0.08
+
+
+def cruise_accel_bias(v_ego: float, accel: float) -> float:
+  return CRUISE_ACCEL_BIAS * float(np.interp(v_ego, [15., 22.], [0., 1.])) * float(np.interp(accel, [-1.0, -0.5], [0., 1.]))
+
 
 class CarController(CarControllerBase, MadsCarController):
   def __init__(self, dbc_names, CP, CP_SP):
@@ -78,7 +87,8 @@ class CarController(CarControllerBase, MadsCarController):
     if self.CP.openpilotLongitudinalControl:
       # CC.enabled lags the ACM clearing its feature status by the selfdrived/controlsd round trip
       long_enabled = CC.enabled and CS.out.cruiseState.enabled
-      accel = float(np.clip(actuators.accel, CarControllerParams.ACCEL_MIN, CarControllerParams.ACCEL_MAX)) if long_enabled else 0.0
+      accel = float(np.clip(actuators.accel - cruise_accel_bias(CS.out.vEgo, actuators.accel),
+                            CarControllerParams.ACCEL_MIN, CarControllerParams.ACCEL_MAX)) if long_enabled else 0.0
       # a rejected frame never reached the bus, resend its counter if nothing newer went out
       resend = CS.long_cmd_rejected_updated and CS.long_cmd_rejected_counter == self.long_cmd_counter % 15
       if not resend:
@@ -131,6 +141,8 @@ class CarController(CarControllerBase, MadsCarController):
         can_sends.append(create_adas_status(self.packer, msg, interface_status))
 
     new_actuators = actuators.as_builder()
+    if self.CP.openpilotLongitudinalControl:
+      new_actuators.accel = accel  # what went on the bus, cruise bias included
     new_actuators.torque = apply_torque / steer_max
     new_actuators.torqueOutputCan = apply_torque
     new_actuators.steeringAngleDeg = self.erc.apply_angle_last

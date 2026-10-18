@@ -5,15 +5,19 @@ This file is part of sunnypilot and is licensed under the MIT License.
 See the LICENSE.md file in the root directory for more details.
 """
 
-from openpilot.cereal import messaging, custom
+from openpilot.cereal import messaging, custom, log
 from opendbc.car import structs
 from openpilot.common.constants import CV
 from openpilot.common.params import Params, UnknownKeyName
 from openpilot.common.swaglog import cloudlog
 from openpilot.selfdrive.car.cruise import V_CRUISE_MAX
-from openpilot.selfdrive.controls.lib.longitudinal_mpc_lib.long_mpc import clip_t_follow_offset_pct
+import numpy as np
+
+from openpilot.selfdrive.controls.lib.longitudinal_mpc_lib.long_mpc import clip_t_follow_offset_pct, get_safe_obstacle_distance, \
+  get_stopped_equivalence_factor
 from openpilot.sunnypilot.selfdrive.controls.lib.dec.dec import DynamicExperimentalController
 from openpilot.sunnypilot.selfdrive.controls.lib.e2e_alerts_helper import E2EAlertsHelper
+from openpilot.sunnypilot.selfdrive.controls.lib.red_light_stop import RedLightStop
 from openpilot.sunnypilot.selfdrive.controls.lib.smart_cruise_control.smart_cruise_control import SmartCruiseControl
 from openpilot.sunnypilot.selfdrive.controls.lib.speed_limit.speed_limit_assist import SpeedLimitAssist
 from openpilot.sunnypilot.selfdrive.controls.lib.speed_limit.speed_limit_resolver import SpeedLimitResolver
@@ -27,6 +31,32 @@ LongitudinalPlanSource = custom.LongitudinalPlanSP.LongitudinalPlanSource
 TRAFFIC_MODE_READ_FRAMES = 5
 # and RivianLaunchAssist every 1 s
 LAUNCH_ASSIST_READ_FRAMES = 20
+# Keep Up With Traffic: re-read every 1 s. Raise the cruise accel cap while a moving radar-tracked lead is further away
+# than the lead planner wants it: none at the desired gap (so a lead that brakes right after pulling away finds the
+# truck no closer than stock), all of it from KEEP_PACE_EXCESS_BP[1] past, and none once the lead is too far ahead to
+# matter. Kept KEEP_PACE_OFF_FRAMES after the lead track drops so a flickering track does not toggle it
+KEEP_PACE_READ_FRAMES = 20
+KEEP_PACE_V_MIN = 1.0      # m/s
+KEEP_PACE_EXCESS_BP = [0., 10., 30., 40.]  # m past the desired following distance
+KEEP_PACE_EXCESS_V = [0., 1., 1., 0.]
+# and half of it by highway speed: in sim, a lead that pulls away and then brakes at -4.5 m/s^2 left 3.0 m at 15 m/s with
+# Traffic Mode (8.2 m stock), 4.8 m with this fade, while launches keep nearly all the gain (peak gap 79 -> 38 m vs 35 m)
+KEEP_PACE_SPEED_BP = [10., 20.]  # m/s
+KEEP_PACE_SPEED_V = [1., 0.5]
+KEEP_PACE_OFF_FRAMES = 10  # 0.5 s at 20 Hz
+# share of the step from the stock cap up to the follow cap, per driving personality
+KEEP_PACE_SHARE_AGGRESSIVE = 1.0
+KEEP_PACE_SHARE_STANDARD = 0.5
+KEEP_PACE_SHARE_RELAXED = 0.25
+
+
+def keep_pace_share(personality) -> float:
+  # compared like get_T_FOLLOW does: selfdriveState.personality is a capnp enum, not a dict key
+  if personality == log.LongitudinalPersonality.aggressive:
+    return KEEP_PACE_SHARE_AGGRESSIVE
+  elif personality == log.LongitudinalPersonality.relaxed:
+    return KEEP_PACE_SHARE_RELAXED
+  return KEEP_PACE_SHARE_STANDARD
 
 
 class LongitudinalPlannerSP:
@@ -52,6 +82,13 @@ class LongitudinalPlannerSP:
     self._launch_assist_available = CP.brand == 'rivian' and CP.openpilotLongitudinalControl
     self._launch_assist_frame = 0
     self._launch_assist_error_logged = False
+    self.red_light_stop = RedLightStop(CP, self._params)
+    self._keep_pace_available = CP.openpilotLongitudinalControl
+    self._keep_pace_enabled = False
+    self._keep_pace_read_frame = 0
+    self._keep_pace_error_logged = False
+    self._keep_pace_frames = 0
+    self._keep_pace_share = 0.
 
     # Following distance offset, read once per drive (plannerd restarts on every onroad transition)
     if CP.openpilotLongitudinalControl:
@@ -91,6 +128,34 @@ class LongitudinalPlannerSP:
     if self._launch_assist_available and self._launch_assist_frame % LAUNCH_ASSIST_READ_FRAMES == 0:
       self._mpc.launch_assist = self.read_launch_assist()
     self._launch_assist_frame += 1
+
+  def read_keep_pace(self) -> bool:
+    try:
+      return self._params.get_bool("KeepPaceWithTraffic")
+    except Exception:
+      # params library built without the key, or a failed read: stock caps rather than take plannerd down
+      if not self._keep_pace_error_logged:
+        cloudlog.exception("KeepPaceWithTraffic read failed, treating it as off")
+        self._keep_pace_error_logged = True
+      return False
+
+  def update_keep_pace(self) -> None:
+    if self._keep_pace_available and self._keep_pace_read_frame % KEEP_PACE_READ_FRAMES == 0:
+      self._keep_pace_enabled = self.read_keep_pace()
+    self._keep_pace_read_frame += 1
+
+  def keep_pace(self, lead, personality, v_ego: float) -> float:
+    """Share of the higher accel cap to use, 0 to 1: with Keep Up With Traffic on and a moving radar-tracked lead, the
+    personality's share, scaled by how far the gap is past what the lead planner wants (it runs before this)."""
+    if self._keep_pace_enabled and lead.present and lead.radar and lead.vLead > KEEP_PACE_V_MIN:
+      desired = get_safe_obstacle_distance(v_ego, self._mpc.t_follow) - get_stopped_equivalence_factor(lead.vLead)
+      excess = float(np.interp(lead.dRel - desired, KEEP_PACE_EXCESS_BP, KEEP_PACE_EXCESS_V))
+      speed = float(np.interp(v_ego, KEEP_PACE_SPEED_BP, KEEP_PACE_SPEED_V))
+      self._keep_pace_share = keep_pace_share(personality) * excess * speed
+      self._keep_pace_frames = KEEP_PACE_OFF_FRAMES
+    elif self._keep_pace_frames > 0:
+      self._keep_pace_frames -= 1
+    return self._keep_pace_share if self._keep_pace_frames > 0 else 0.
 
   def is_e2e(self, sm: messaging.SubMaster) -> bool:
     experimental_mode = sm['selfdriveState'].experimentalMode
@@ -133,6 +198,8 @@ class LongitudinalPlannerSP:
     self.events_sp.clear()
     self.update_traffic_mode()
     self.update_launch_assist()
+    self.red_light_stop.update_offset()
+    self.update_keep_pace()
     self.dec.update(sm)
     self.e2e_alerts_helper.update(sm, self.events_sp)
 
