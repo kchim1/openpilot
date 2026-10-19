@@ -176,3 +176,34 @@ class TestCruiseAccelBias:
     # braking is left alone, with a fade rather than a step
     assert cruise_accel_bias(25., -1.5) == 0.
     assert 0. < cruise_accel_bias(25., -0.75) < CRUISE_ACCEL_BIAS
+
+
+class TestLongRequestWhileOverridden(unittest.TestCase):
+  """With the gas pressed the panda drops any long request but an exact 0, and a run of dropped requests faults the ACM
+  ("Cruise Fault: Restart the Car", routes 00000015 and 00000016)."""
+
+  @staticmethod
+  def _sent_accel(v_ego, accel, long_active, gas_pressed):
+    # raw ACM_AccelerationRequest of the 0x160 frame, decoded the way the panda safety does (opendbc/safety/modes/rivian.h)
+    CP = CarInterface.get_non_essential_params(CAR.RIVIAN_R1)
+    CP.openpilotLongitudinalControl = True
+    CI = CarInterface(CP, structs.CarParamsSP())
+    CC, CS = CI.CC, CI.CS
+    CS.acm_lka_hba_cmd = copy.copy(CI.can_parsers[Bus.cam].vl["ACM_lkaHbaCmd"])
+    CS.sccm_wheel_touch = copy.copy(CI.can_parsers[Bus.pt].vl["SCCM_WheelTouch"])
+    CS.vdm_adas_status = [copy.copy(CI.can_parsers[Bus.pt].vl["VDM_AdasSts"])]
+    CS.out = structs.CarState(gearShifter=GearShifter.drive, vEgo=v_ego, vEgoRaw=v_ego, gasPressed=gas_pressed,
+                              cruiseState={"enabled": True})
+    car_control = structs.CarControl(enabled=True, longActive=long_active, actuators={"accel": accel}).as_reader()
+    _, can_sends = CC.update(car_control, structs.CarControlSP(), CS, 0)
+    data = next(m[1] for m in can_sends if m[0] == 0x160)
+    return ((data[2] << 3) | (data[3] >> 5)) - 1024
+
+  def test_gas_override_sends_exactly_zero(self):
+    # controlsd zeroes the accel while the gas overrides; the cruise bias must not turn that into a small request
+    for v_ego in (0., 10., 15.5, 18.5, 22., 30., 40.):
+      self.assertEqual(self._sent_accel(v_ego, 0., long_active=False, gas_pressed=True), 0, v_ego)
+
+  def test_bias_applies_while_openpilot_controls_speed(self):
+    self.assertEqual(self._sent_accel(30., 0., long_active=True, gas_pressed=False), -8)  # 0.01 m/s^2 per bit
+    self.assertEqual(self._sent_accel(10., 0., long_active=True, gas_pressed=False), 0)
