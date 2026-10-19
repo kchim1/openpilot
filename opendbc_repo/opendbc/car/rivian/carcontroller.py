@@ -87,8 +87,11 @@ class CarController(CarControllerBase, MadsCarController):
     if self.CP.openpilotLongitudinalControl:
       # CC.enabled lags the ACM clearing its feature status by the selfdrived/controlsd round trip
       long_enabled = CC.enabled and CS.out.cruiseState.enabled
-      accel = float(np.clip(actuators.accel - cruise_accel_bias(CS.out.vEgo, actuators.accel),
-                            CarControllerParams.ACCEL_MIN, CarControllerParams.ACCEL_MAX)) if long_enabled else 0.0
+      # the bias only while openpilot controls the speed. With the gas pressed the panda passes no long request but an
+      # exact 0, and a run of blocked requests faults the ACM ("Cruise Fault: Restart the Car", routes 00000015 and
+      # 00000016: engaged with the gas held past 15 m/s)
+      bias = cruise_accel_bias(CS.out.vEgo, actuators.accel) if CC.longActive else 0.
+      accel = float(np.clip(actuators.accel - bias, CarControllerParams.ACCEL_MIN, CarControllerParams.ACCEL_MAX)) if long_enabled else 0.0
       # a rejected frame never reached the bus, resend its counter if nothing newer went out
       resend = CS.long_cmd_rejected_updated and CS.long_cmd_rejected_counter == self.long_cmd_counter % 15
       if not resend:
