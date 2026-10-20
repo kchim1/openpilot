@@ -146,6 +146,11 @@ class CarController(CarControllerBase, MadsCarController):
       if not resend:
         self.long_cmd_counter += 1
       can_sends.append(create_longitudinal(self.packer, self.long_cmd_counter, accel, long_enabled))
+      # what went out next to the truck's answer, for the cruise fault record (acc_fault_recorder). getattr: some tests
+      # drive this controller with a stand-in CarState
+      recorder = getattr(CS, "acc_fault_recorder", None)
+      if recorder is not None:
+        recorder.record_command(accel, long_enabled, long_allowed, self.long_cmd_counter % 15)
 
       # If openpilot would refuse to engage (NO_ENTRY), hide the driver's ACC engage request from the ACM so it never
       # enters ACC. Once the ACM is in ACC with nothing accepting its long request, it latches a fault that only
