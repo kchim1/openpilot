@@ -43,7 +43,8 @@ class TestExternalControllerForceTorque(unittest.TestCase):
       out = SimpleNamespace(steeringAngleDeg=0.0, steeringRateDeg=0.0, steeringTorque=0.0, steeringPressed=False,
                             vEgo=25.0, vEgoRaw=25.0, aEgo=0.0)
       CS = SimpleNamespace(out=out, hands_on_level=0, eac_status=2 if erc.angle_active else 1, eac_error_code=0,
-                           sccm_wheel_touch={"SCCM_WheelTouch_Calibration": 1000, "SCCM_WheelTouch_CapacitiveValue": 0})
+                           sccm_wheel_touch={"SCCM_WheelTouch_Calibration": 1000, "SCCM_WheelTouch_CapacitiveValue": 0},
+                           toi_fault=False, torque_cmd_rejected=False)
       erc.update(CS, lat_active, actuators)
       states.append((erc.torque_active, erc.angle_active, erc.apply_torque_last))
     return states

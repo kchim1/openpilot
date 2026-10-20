@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 import unittest
+from types import SimpleNamespace
 import numpy as np
 
 from opendbc.car.lateral import get_max_angle_delta_vm, get_max_angle_vm
 from opendbc.car.rivian.carcontroller import get_safety_CP
+from opendbc.car.rivian.ext_controller import ExternalController, TOI_CLEAR_LATCH_FRAMES
 from opendbc.car.rivian.values import CarControllerParams, RivianSafetyFlags
 from opendbc.car.rivian.riviancan import checksum as _checksum
 from opendbc.car.structs import CarParams
@@ -230,6 +232,118 @@ class TestRivianLongitudinalSafety(TestRivianSafetyBase):
     self.safety = libsafety_py.libsafety
     self.safety.set_safety_hooks(CarParams.SafetyModel.rivian, RivianSafetyFlags.LONG_CONTROL)
     self.safety.init_tests()
+
+
+class TestRivianTorqueControllerSafety(unittest.TestCase):
+  """The real cooperative-torque controller (ext_controller) driven frame by frame (10 ms) through the panda safety model,
+  so each is checked against the other instead of against a hand-copied limit. At a high wheel angle the controller
+  blips the TOI request every ~0.9 s: torque 0 with the request low, then a ramp from 0."""
+
+  SPEED = 11.4  # m/s
+  T0 = 1_000_000  # us
+  cnt_speed = 0
+
+  def setUp(self):
+    self.packer = CANPackerSafety("rivian_primary_actuator")
+    self.safety = libsafety_py.libsafety
+    self.safety.set_safety_hooks(CarParams.SafetyModel.rivian, 0)
+    self.safety.init_tests()
+
+  def _rx(self, name, values):
+    self.assertTrue(self.safety.safety_rx_hook(self.packer.make_can_msg_safety(name, 0, values, fix_checksum=checksum)))
+
+  def _tx_torque(self, torque, steer_req):
+    msg = self.packer.make_can_msg_safety("ACM_lkaHbaCmd", 0, {"ACM_lkaStrToqReq": torque, "ACM_lkaActToi": steer_req})
+    return self.safety.safety_tx_hook(msg)
+
+  def _setup(self, angle, timer_offset_frames=0):
+    self.erc = ExternalController()
+    self.erc.torque_active = True
+    self.cs = SimpleNamespace(out=SimpleNamespace(vEgoRaw=self.SPEED, steeringTorque=0.0, steeringAngleDeg=angle),
+                              toi_fault=False, torque_cmd_rejected=False)
+    self.safety.init_tests()
+    self.safety.set_controls_allowed(True)
+    for _ in range(6):
+      self._rx("ESP_Status", {"ESP_Vehicle_Speed": self.SPEED * 3.6, "ESP_Status_Counter": self.cnt_speed % 15, "ESP_Vehicle_Speed_Q": 1})
+      self.__class__.cnt_speed += 1
+      self._rx("EPAS_SystemStatus", {"EPAS_TorsionBarTorque": 0})
+    # the panda's 250 ms real-time interval starts at its first torque frame: send one now and start the controller
+    # timer_offset_frames later, so the interval is out of step with the controller's blip cycle
+    self.safety.set_timer(self.T0)
+    self.assertTrue(self._tx_torque(0, 1))
+    self.frame = max(1, timer_offset_frames)
+
+  def _frame(self, demand, toi_fault=False, refuse=False):
+    """one controller frame through the panda; returns whether the panda let it through. refuse: the panda's lateral
+    permission drops for this one frame, so it refuses a torque request and zeroes its torque memory"""
+    self.safety.set_timer(self.T0 + self.frame * 10_000)
+    self.frame += 1
+    self.cs.toi_fault = toi_fault
+    self.erc._update_torque(self.cs, SimpleNamespace(torque=demand))
+    self.safety.set_controls_allowed(not refuse)
+    ok = self._tx_torque(self.erc.apply_torque_last, int(self.erc.toi_act_cmd))
+    self.safety.set_controls_allowed(True)
+    # the refused frame comes back on bus 192 and reaches carstate by the next frame
+    self.cs.torque_cmd_rejected = not ok
+    return ok
+
+  def test_torque_through_the_blip_is_never_refused(self):
+    """A full-rate ramp, and a reversal, straddling the TOI blip at every phase of the panda's 250 ms real-time interval.
+    On this branch a blip frame is an ordinary zero-torque frame to the panda, so it can never leave the real-time
+    reference stale (AdventurePilot's safety code skips it, which made this fail there)."""
+    blocked = []
+    for sign in (1.0, -1.0):
+      for offset in range(0, 26, 5):  # the panda's real-time interval against the blip cycle
+        for start in range(0, 91, 10):  # where in the blip cycle the ramp starts
+          self._setup(150.0, offset)
+          for _ in range(start):
+            self._frame(0.0)
+          for i in range(240):
+            if not self._frame(sign if i < 120 else -sign):
+              blocked.append((sign, offset, start, i))
+              break
+    self.assertEqual(blocked, [], f"panda refused the controller at (sign, timer offset, ramp start, frame): {blocked[:6]}")
+
+  def test_torque_recovers_after_a_refused_frame_at_every_blip_phase(self):
+    """A refused frame zeroes the panda's torque memory, after which it refuses anything more than one rate step from
+    zero. The controller must restart from zero on the next frame. It used to carry on and be refused until the next
+    blip zeroed it (up to 0.9 s), or, below 90 deg where there is no blip, until the torque channel ended."""
+    stuck = []
+    for angle in (150.0, 30.0):
+      for phase in range(2, 89, 3):  # where in the blip cycle (torque ramping from 0) the refusal lands, not on the blip
+        for offset in (0, 13):
+          self._setup(angle, offset)
+          for _ in range(phase):
+            self.assertTrue(self._frame(0.8))
+          self.assertFalse(self._frame(0.8, refuse=True))
+          refused = sum(not self._frame(0.8) for _ in range(100))
+          if refused:
+            stuck.append((angle, phase, offset, refused))
+    self.assertEqual(stuck, [], f"frames refused after the first, at (angle, blip phase, timer offset, count): {stuck[:6]}")
+
+  def test_toi_fault_release_is_never_refused(self):
+    """Releasing the TOI request to clear a latched EPAS ToiFlt, and the ramp back from 0, must pass the panda wherever
+    the release lands: mid-ramp, next to a blip, at any phase of its real-time interval, and with no blip at all."""
+    blocked, late = [], []
+    for angle in (150.0, 30.0):
+      for sign in (1.0, -1.0):
+        for offset in range(0, 26, 8):
+          # where in the ramp / blip cycle the latch lands; the blip is on frames 89 and 90
+          for start in (*range(0, 91, 10), 86, 87, 88, 89, 91):
+            self._setup(angle, offset)
+            low_at = None
+            for i in range(200):
+              # like the EPAS: latched from start until two frames after the first frame sent with the TOI request low
+              fault = start <= i and (low_at is None or i < low_at + 2)
+              if not self._frame(sign, toi_fault=fault):
+                blocked.append((angle, sign, offset, start, i))
+                break
+              if low_at is None and start <= i and not self.erc.toi_act_cmd:
+                low_at = i
+            if low_at is None or low_at - start > TOI_CLEAR_LATCH_FRAMES - 1:
+              late.append((angle, sign, offset, start, low_at))
+    self.assertEqual(blocked, [], f"panda refused around a ToiFlt release at (angle, sign, timer offset, latch start, frame): {blocked[:6]}")
+    self.assertEqual(late, [], f"latch not released on its 3rd frame at (angle, sign, timer offset, latch start, low frame): {late[:6]}")
 
 
 class TestRivianIgnition(unittest.TestCase):
