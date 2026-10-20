@@ -11,6 +11,7 @@ from opendbc.car import structs
 from numpy import interp
 from openpilot.common.params import Params
 from openpilot.common.realtime import DT_MDL
+from openpilot.common.swaglog import cloudlog
 from openpilot.sunnypilot.selfdrive.controls.lib.dec.constants import WMACConstants
 from typing import Literal
 
@@ -136,6 +137,8 @@ class DynamicExperimentalController:
     self._mpc = mpc
     self._params = params or Params()
     self._enabled: bool = self._params.get_bool("DynamicExperimentalControl")
+    self._brake_sooner_error_logged = False
+    self._brake_sooner: bool = self._read_brake_sooner()
     self._active: bool = False
     self._frame: int = 0
     self._urgency = 0.0
@@ -184,9 +187,20 @@ class DynamicExperimentalController:
     self._expected_distance = 0.0
     self._trajectory_valid = False
 
+  def _read_brake_sooner(self) -> bool:
+    try:
+      return self._params.get_bool("BrakeSoonerForStops")
+    except Exception:
+      # params library built without the key, or a failed read: the stock curve rather than take plannerd down
+      if not self._brake_sooner_error_logged:
+        cloudlog.exception("BrakeSoonerForStops read failed, treating it as off")
+        self._brake_sooner_error_logged = True
+      return False
+
   def _read_params(self) -> None:
     if self._frame % int(1. / DT_MDL) == 0:
       self._enabled = self._params.get_bool("DynamicExperimentalControl")
+      self._brake_sooner = self._read_brake_sooner()
 
   def mode(self) -> str:
     return self._mode_manager.get_mode()
@@ -271,9 +285,11 @@ class DynamicExperimentalController:
     self._endpoint_x = endpoint_x
 
     # Get expected distance based on current speed using tuned constants
-    expected_distance = interp(self._v_ego_kph,
-                               WMACConstants.SLOW_DOWN_BP,
-                               WMACConstants.SLOW_DOWN_DIST)
+    if self._brake_sooner:
+      slow_down_bp, slow_down_dist = WMACConstants.SLOW_DOWN_BP_BRAKE_SOONER, WMACConstants.SLOW_DOWN_DIST_BRAKE_SOONER
+    else:
+      slow_down_bp, slow_down_dist = WMACConstants.SLOW_DOWN_BP, WMACConstants.SLOW_DOWN_DIST
+    expected_distance = interp(self._v_ego_kph, slow_down_bp, slow_down_dist)
     self._expected_distance = expected_distance
 
     # Calculate urgency based on trajectory shortage

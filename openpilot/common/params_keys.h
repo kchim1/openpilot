@@ -297,6 +297,10 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     // plannerd re-reads it every 1 s.
     {"KeepPaceWithTraffic", {PERSISTENT | BACKUP, BOOL, "1"}},
 
+    // Brake Sooner for Stops: Dynamic Experimental Control hands slowing to the driving model sooner above 37 mph.
+    // plannerd re-reads it every 1 s.
+    {"BrakeSoonerForStops", {PERSISTENT | BACKUP, BOOL, "1"}},
+
     // Smart Cruise Control
     {"MapTargetVelocities", {CLEAR_ON_ONROAD_TRANSITION, STRING}},
     {"SmartCruiseControlMap", {PERSISTENT | BACKUP, BOOL, "0"}},

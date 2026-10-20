@@ -76,6 +76,7 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     self.fcw = False
     self.dt = dt
     self.allow_throttle = True
+    self.e2e_prev = False
 
     self.v_desired_filter = FirstOrderFilter(init_v, 2.0, self.dt)
     self.a_cruise = init_a
@@ -152,6 +153,12 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     output_should_stop_e2e = sm['modelV2'].action.shouldStop
 
     is_e2e = self.is_e2e(sm)
+    # Handing back from end to end to ACC (DEC, or Experimental Mode turned off): while e2e, the cruise accel can build up
+    # to ACCEL_MAX behind the min() because the e2e candidate is lower. Restart it from the last target (at least 0) so it
+    # builds up again at the cruise jerk to the ACC cap, instead of jumping there in one step
+    if self.e2e_prev and not is_e2e:
+      self.a_cruise = min(self.a_cruise, max(a_prev, 0.))
+    self.e2e_prev = is_e2e
 
     self.a_cruise = get_cruise_accel(is_e2e, v_cruise, v_ego,
                                      self.a_cruise, steer_angle_without_offset, self.CP, self.dt,

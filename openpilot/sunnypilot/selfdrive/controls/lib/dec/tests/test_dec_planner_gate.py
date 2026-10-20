@@ -6,10 +6,14 @@ See the LICENSE.md file in the root directory for more details.
 """
 from typing import cast
 
+import numpy as np
+
 from openpilot.cereal import custom, messaging
 from opendbc.car import structs
+from openpilot.common.realtime import DT_MDL
 from openpilot.common.test import OpenpilotTestCase
-from openpilot.selfdrive.controls.lib.longitudinal_planner import LongitudinalPlanner, LongitudinalPlanSource
+from openpilot.selfdrive.controls.lib.longitudinal_planner import LongitudinalPlanner, LongitudinalPlanSource, A_CRUISE_MAX_BP, \
+  J_CRUISE_VALS, get_max_accel
 from openpilot.sunnypilot.selfdrive.controls.lib.dec.dec import DynamicExperimentalController
 
 V_EGO = 20.0
@@ -46,7 +50,7 @@ class MockSubMaster(dict):
     return True
 
 
-def build_sm(experimental_mode: bool) -> MockSubMaster:
+def build_sm(experimental_mode: bool, e2e_accel: float = E2E_ACCEL) -> MockSubMaster:
   services = {}
   for service in ("radarState", "controlsState", "vehicleParameters", "carStateSP",
                   "liveMapDataSP", "gpsLocationExternal", "gpsLocation"):
@@ -71,7 +75,7 @@ def build_sm(experimental_mode: bool) -> MockSubMaster:
   model.modelV2.orientationRate.z = [0.01] * 33  # nonzero: a straight path divides by zero in SCC vision
   model.modelV2.velocity.x = [V_EGO] * 33
   model.modelV2.position.x = [float(i) for i in range(33)]
-  model.modelV2.action.desiredAcceleration = E2E_ACCEL
+  model.modelV2.action.desiredAcceleration = e2e_accel
   services['modelV2'] = model.modelV2.as_reader()
 
   return MockSubMaster(services)
@@ -110,3 +114,21 @@ class TestDecPlannerGate(OpenpilotTestCase):
   def test_no_e2e_when_dec_holds_acc(self):
     # the regression
     assert self._source(True, True, 'acc') != LongitudinalPlanSource.e2e
+
+  def test_no_surge_when_dec_hands_back_to_acc(self):
+    # 72 km/h, set speed 100 km/h, no lead. While the model is in control its candidate wins the min(), and the cruise
+    # accel behind it builds up to ACCEL_MAX. Handing back to ACC must not let that through in one step: the target
+    # builds up again from where it was, no faster than the cruise jerk, to the ACC cap
+    planner = build_planner(True, 'blended')
+    for _ in range(int(3. / DT_MDL)):
+      planner.update(build_sm(True, e2e_accel=0.2))
+    a_blended = float(planner.output_a_target)
+    assert abs(a_blended - 0.2) < 1e-3
+    planner.dec = cast(DynamicExperimentalController, MockDec(True, 'acc'))
+    targets = []
+    for _ in range(int(3. / DT_MDL)):
+      planner.update(build_sm(True, e2e_accel=0.2))
+      targets.append(float(planner.output_a_target))
+    j_cruise = float(np.interp(V_EGO, A_CRUISE_MAX_BP, J_CRUISE_VALS))
+    assert max(np.diff([a_blended] + targets)) <= j_cruise * DT_MDL + 1e-6, targets[:5]
+    assert abs(targets[-1] - get_max_accel(V_EGO)) < 1e-3
