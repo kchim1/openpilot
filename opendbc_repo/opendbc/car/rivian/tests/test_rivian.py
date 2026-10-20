@@ -43,7 +43,8 @@ class TestExternalControllerForceTorque(unittest.TestCase):
       out = SimpleNamespace(steeringAngleDeg=0.0, steeringRateDeg=0.0, steeringTorque=0.0, steeringPressed=False,
                             vEgo=25.0, vEgoRaw=25.0, aEgo=0.0)
       CS = SimpleNamespace(out=out, hands_on_level=0, eac_status=2 if erc.angle_active else 1, eac_error_code=0,
-                           sccm_wheel_touch={"SCCM_WheelTouch_Calibration": 1000, "SCCM_WheelTouch_CapacitiveValue": 0})
+                           sccm_wheel_touch={"SCCM_WheelTouch_Calibration": 1000, "SCCM_WheelTouch_CapacitiveValue": 0},
+                           toi_fault=False, torque_cmd_rejected=False)
       erc.update(CS, lat_active, actuators)
       states.append((erc.torque_active, erc.angle_active, erc.apply_torque_last))
     return states
@@ -179,11 +180,11 @@ class TestCruiseAccelBias:
 
 
 class TestLongRequestWhileOverridden(unittest.TestCase):
-  """With the gas pressed the panda drops any long request but an exact 0, and a run of dropped requests faults the ACM
-  ("Cruise Fault: Restart the Car", routes 00000015 and 00000016)."""
+  """With the gas or brake pressed, or the ACM out of cruise, the panda drops any long request but an exact 0, and a run of
+  dropped requests faults the ACM ("Cruise Fault: Restart the Car", routes 00000015 and 00000016)."""
 
   @staticmethod
-  def _sent_accel(v_ego, accel, long_active, gas_pressed):
+  def _sent_accel(v_ego, accel, long_active, gas_pressed=False, brake_pressed=False, cruise_enabled=True):
     # raw ACM_AccelerationRequest of the 0x160 frame, decoded the way the panda safety does (opendbc/safety/modes/rivian.h)
     CP = CarInterface.get_non_essential_params(CAR.RIVIAN_R1)
     CP.openpilotLongitudinalControl = True
@@ -193,7 +194,7 @@ class TestLongRequestWhileOverridden(unittest.TestCase):
     CS.sccm_wheel_touch = copy.copy(CI.can_parsers[Bus.pt].vl["SCCM_WheelTouch"])
     CS.vdm_adas_status = [copy.copy(CI.can_parsers[Bus.pt].vl["VDM_AdasSts"])]
     CS.out = structs.CarState(gearShifter=GearShifter.drive, vEgo=v_ego, vEgoRaw=v_ego, gasPressed=gas_pressed,
-                              cruiseState={"enabled": True})
+                              brakePressed=brake_pressed, cruiseState={"enabled": cruise_enabled})
     car_control = structs.CarControl(enabled=True, longActive=long_active, actuators={"accel": accel}).as_reader()
     _, can_sends = CC.update(car_control, structs.CarControlSP(), CS, 0)
     data = next(m[1] for m in can_sends if m[0] == 0x160)
@@ -207,3 +208,28 @@ class TestLongRequestWhileOverridden(unittest.TestCase):
   def test_bias_applies_while_openpilot_controls_speed(self):
     self.assertEqual(self._sent_accel(30., 0., long_active=True, gas_pressed=False), -8)  # 0.01 m/s^2 per bit
     self.assertEqual(self._sent_accel(10., 0., long_active=True, gas_pressed=False), 0)
+
+  def test_pedal_before_carcontrol_reacts_sends_exactly_zero(self):
+    # the panda reads the pedal off this frame's CAN, while carControl is still from before it: longActive is still True
+    for v_ego in (0., 10., 25.):
+      for accel in (-2.0, -0.5, 0.3, 1.5):
+        self.assertEqual(self._sent_accel(v_ego, accel, long_active=True, gas_pressed=True), 0, (v_ego, accel))
+        self.assertEqual(self._sent_accel(v_ego, accel, long_active=True, brake_pressed=True), 0, (v_ego, accel))
+
+  def test_cruise_disabled_sends_exactly_zero(self):
+    # the ACM has left cruise (feature status not 1) before carControl caught up
+    for accel in (-2.0, 0.3, 1.5):
+      self.assertEqual(self._sent_accel(25., accel, long_active=True, cruise_enabled=False), 0, accel)
+
+  def test_request_passes_through_when_allowed(self):
+    self.assertEqual(self._sent_accel(10., 1.5, long_active=True), 150)
+    self.assertEqual(self._sent_accel(10., -2.0, long_active=True), -200)
+
+  def test_no_request_unless_openpilot_controls_speed(self):
+    # engaged, cruise on and no pedal, but carControl says openpilot is not controlling the speed
+    for accel in (-2.0, 0.3):
+      self.assertEqual(self._sent_accel(25., accel, long_active=False), 0, accel)
+
+  def test_request_is_clipped(self):
+    self.assertEqual(self._sent_accel(10., 3.0, long_active=True), 200)  # ACCEL_MAX
+    self.assertEqual(self._sent_accel(10., -5.0, long_active=True), -350)  # ACCEL_MIN
