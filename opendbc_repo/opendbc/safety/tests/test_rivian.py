@@ -3,10 +3,12 @@ import unittest
 from types import SimpleNamespace
 import numpy as np
 
+from opendbc.car import Bus, structs
 from opendbc.car.lateral import get_max_angle_delta_vm, get_max_angle_vm
 from opendbc.car.rivian.carcontroller import get_safety_CP
 from opendbc.car.rivian.ext_controller import ExternalController, TOI_CLEAR_LATCH_FRAMES
-from opendbc.car.rivian.values import CarControllerParams, RivianSafetyFlags
+from opendbc.car.rivian.interface import CarInterface
+from opendbc.car.rivian.values import CAR, CarControllerParams, RivianSafetyFlags
 from opendbc.car.rivian.riviancan import checksum as _checksum
 from opendbc.car.structs import CarParams
 from opendbc.car.vehicle_model import VehicleModel
@@ -344,6 +346,60 @@ class TestRivianTorqueControllerSafety(unittest.TestCase):
               late.append((angle, sign, offset, start, low_at))
     self.assertEqual(blocked, [], f"panda refused around a ToiFlt release at (angle, sign, timer offset, latch start, frame): {blocked[:6]}")
     self.assertEqual(late, [], f"latch not released on its 3rd frame at (angle, sign, timer offset, latch start, low frame): {late[:6]}")
+
+
+class TestRivianLongRequestSafety(unittest.TestCase):
+  """The real CarController's 0x160 frame through the panda safety model on the frame the panda first sees a pedal, or the
+  ACM leaving cruise, while carControl still says openpilot controls the speed. A dropped frame is a hole in the request
+  stream, and a run of them faults the ACM ("Cruise Fault: Restart the Car")."""
+
+  SPEED = 20.0  # m/s
+
+  def setUp(self):
+    self.packer = CANPackerSafety("rivian_primary_actuator")
+    self.safety = libsafety_py.libsafety
+    self.safety.set_safety_hooks(CarParams.SafetyModel.rivian, RivianSafetyFlags.LONG_CONTROL)
+    self.safety.init_tests()
+    self.cnt = 0
+
+  def _rx(self, name, bus, values):
+    self.assertTrue(self.safety.safety_rx_hook(self.packer.make_can_msg_safety(name, bus, values, fix_checksum=checksum)))
+
+  def _rx_car(self, gas, brake, feature_status):
+    self.cnt += 1
+    self._rx("ESP_Status", 0, {"ESP_Vehicle_Speed": self.SPEED * 3.6, "ESP_Status_Counter": self.cnt % 15, "ESP_Vehicle_Speed_Q": 1})
+    self._rx("VDM_PropStatus", 0, {"VDM_AcceleratorPedalPosition": 20 if gas else 0, "VDM_VehicleSpeed": self.SPEED * 3.6,
+                                   "VDM_PropStatus_Counter": self.cnt % 15, "VDM_VehicleSpeedQ": 1})
+    self._rx("iBESP2", 0, {"iBESP2_BrakePedalApplied": brake})
+    self._rx("ACM_Status", 2, {"ACM_FeatureStatus": feature_status, "ACM_Unkown1": 1})
+
+  def _controller_frame(self, gas, brake, cruise):
+    CP = CarInterface.get_non_essential_params(CAR.RIVIAN_R1)
+    CP.openpilotLongitudinalControl = True
+    CI = CarInterface(CP, structs.CarParamsSP())
+    CS = CI.CS
+    CS.acm_lka_hba_cmd = dict(CI.can_parsers[Bus.cam].vl["ACM_lkaHbaCmd"])
+    CS.sccm_wheel_touch = dict(CI.can_parsers[Bus.pt].vl["SCCM_WheelTouch"])
+    CS.vdm_adas_status = [dict(CI.can_parsers[Bus.pt].vl["VDM_AdasSts"])]
+    CS.out = structs.CarState(gearShifter=structs.CarState.GearShifter.drive, vEgo=self.SPEED, vEgoRaw=self.SPEED,
+                              gasPressed=gas, brakePressed=brake, cruiseState={"enabled": cruise})
+    car_control = structs.CarControl(enabled=True, longActive=True, actuators={"accel": 1.0}).as_reader()
+    _, can_sends = CI.CC.update(car_control, structs.CarControlSP(), CS, 0)
+    addr, dat, bus = next(m for m in can_sends if m[0] == 0x160)
+    return libsafety_py.make_CANPacket(addr, bus, dat)
+
+  def test_request_is_not_dropped_when_a_pedal_appears(self):
+    for gas, brake, cruise in ((True, False, True), (False, True, True), (False, False, False)):
+      with self.subTest(gas=gas, brake=brake, cruise=cruise):
+        self.safety.init_tests()
+        for feature_status in (0, 1):  # the ACM enters cruise: the panda allows longitudinal
+          self._rx_car(False, False, feature_status)
+        self.assertTrue(self.safety.get_longitudinal_allowed())
+        self.assertTrue(self.safety.safety_tx_hook(self._controller_frame(False, False, True)))
+        # the panda sees the pedal or the ACM leaving cruise on the same CAN this frame's CarState came from
+        self._rx_car(gas, brake, 1 if cruise else 0)
+        self.assertFalse(self.safety.get_longitudinal_allowed())
+        self.assertTrue(self.safety.safety_tx_hook(self._controller_frame(gas, brake, cruise)))
 
 
 class TestRivianIgnition(unittest.TestCase):
