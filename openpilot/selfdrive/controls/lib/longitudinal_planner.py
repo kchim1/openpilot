@@ -204,6 +204,14 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
                                      self.scc.governor.throttle_scale(), sm['selfdriveState'].personality)
     cruise_should_stop = should_stop(v_ego, self.a_cruise)
 
+    # Behind a car that has stopped or is stopping, the lead planner's braking beyond one even stop at the gap eases off
+    # to that stop. Its own braking only, before the min(): anything else asking for more still wins
+    floor = self.stop_behind_lead.profile_floor(v_ego, sm['radarState'].leadOne, long_off=reset_state,
+                                                traffic_mode=self.mpc.traffic_mode)
+    output_a_target_mpc = self.stop_behind_lead.relax(output_a_target_mpc,
+                                                      floor if self.mpc.source == LongitudinalPlanSource.lead0 else None,
+                                                      a_prev, off=self.fcw or reset_state)
+
     candidates = [(output_a_target_mpc, self.mpc.source, output_should_stop_mpc),
                   (self.a_cruise, LongitudinalPlanSource.cruise, cruise_should_stop)]
     if is_e2e:
