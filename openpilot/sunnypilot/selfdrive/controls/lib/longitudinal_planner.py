@@ -192,6 +192,19 @@ class LongitudinalPlannerSP:
 
     self.source = min(targets, key=lambda k: targets[k][0])
     self.output_v_target, self.output_a_target = targets[self.source]
+
+    # A source wins on the lowest SPEED target, but the a_target handed back becomes the planner's acceleration state:
+    # it seeds the MPC and is integrated into v_desired_filter (a_ego here is that state from the last frame, not the
+    # measured acceleration). So a source that wins the speed contest while asking to ACCELERATE (SCC-V turning or
+    # leaving a turn, up to +0.5 m/s^2, holding a cap a lead has braked the truck below) would inject an acceleration
+    # the truck is not making: v_desired_filter drifts above the true speed and the MPC plans braking for a truck going
+    # faster than it really is.
+    #
+    # Every source but cruise is a speed CAP: it may only ever ask for less acceleration, never more. Clamping to the
+    # incoming state keeps every cap able to slow the truck (SCC-V's own decel still passes through) while leaving the
+    # accelerate-out to the MPC and the cruise accel. Cruise, SCC-M and Speed Limit Assist hand back a_ego itself, so
+    # this is a no-op for them.
+    self.output_a_target = min(self.output_a_target, a_ego)
     return self.output_v_target, self.output_a_target
 
   def update(self, sm: messaging.SubMaster) -> None:
