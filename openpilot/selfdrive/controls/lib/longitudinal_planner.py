@@ -3,6 +3,7 @@ import math
 import numpy as np
 
 import openpilot.cereal.messaging as messaging
+from openpilot.cereal import log
 from opendbc.car.interfaces import ACCEL_MIN, ACCEL_MAX
 from openpilot.common.constants import CV
 from openpilot.common.filter_simple import FirstOrderFilter
@@ -28,6 +29,15 @@ A_FOLLOW_MAX_VALS = [2.0, 2.0, 1.4, 1.0]
 A_FOLLOW_TOTAL_MAX = 2.0
 J_CRUISE_VALS = [1.6, 1.2, 0.8, 0.6]
 A_CRUISE_MIN = -1.2
+# Launch: the throttle cap from a stop and at low speed, by driving personality. The stock caps (1.6 m/s^2 on radar
+# cruise, 2.0 end to end, where the driving model launches at ~1.9) felt too strong pulling away from a red light with no
+# one ahead (route 0000001d 7:24: 2.1 m/s^2 measured, as the truck delivers ~12% more than it is asked for). The cap holds
+# up to LAUNCH_CAP_BP[0], fades into the normal one by LAUNCH_CAP_BP[1], and never raises it. Keep Up With Traffic still
+# lifts it toward its own cap behind a lead that pulls away
+LAUNCH_CAP_BP = [4., 12.]
+LAUNCH_CAP_AGGRESSIVE = 1.4
+LAUNCH_CAP_STANDARD = 1.2
+LAUNCH_CAP_RELAXED = 1.0
 CONTROL_N_T_IDX = ModelConstants.T_IDXS[:CONTROL_N]
 ALLOW_THROTTLE_THRESHOLD = 0.4
 MIN_ALLOW_THROTTLE_SPEED = 2.5
@@ -42,12 +52,30 @@ def get_max_accel(v_ego, follow_share=0.):
     max_accel += follow_share * (np.interp(v_ego, A_CRUISE_MAX_BP, A_FOLLOW_MAX_VALS) - max_accel)
   return max_accel
 
+def get_launch_cap(personality) -> float:
+  # compared like get_T_FOLLOW does: selfdriveState.personality is a capnp enum, not a dict key
+  if personality == log.LongitudinalPersonality.aggressive:
+    return LAUNCH_CAP_AGGRESSIVE
+  elif personality == log.LongitudinalPersonality.relaxed:
+    return LAUNCH_CAP_RELAXED
+  return LAUNCH_CAP_STANDARD
+
+def apply_launch_cap(max_accel, v_ego, personality):
+  w = float(np.interp(v_ego, LAUNCH_CAP_BP, [1., 0.]))
+  return min(max_accel, max_accel + w * (get_launch_cap(personality) - max_accel))
+
 def get_coast_accel(pitch):
   return np.sin(pitch) * -5.65 - 0.3  # fitted from data using xx/projects/allow_throttle/compute_coast_accel.py
 
 def get_cruise_accel(e2e, v_cruise, v_ego, a_cruise_prev, angle_steers, CP, dt, accel_coast, allow_throttle, follow_share=0.,
-                     throttle_scale=1.):
-  max_accel = ACCEL_MAX if e2e else get_max_accel(v_ego, follow_share)
+                     throttle_scale=1., personality=None):
+  if personality is None:
+    max_accel = ACCEL_MAX if e2e else get_max_accel(v_ego, follow_share)
+  else:
+    stock = ACCEL_MAX if e2e else float(np.interp(v_ego, A_CRUISE_MAX_BP, A_CRUISE_MAX_VALS))
+    follow = ACCEL_MAX if e2e else float(np.interp(v_ego, A_CRUISE_MAX_BP, A_FOLLOW_MAX_VALS))
+    base = apply_launch_cap(stock, v_ego, personality)
+    max_accel = base + follow_share * (follow - base) if follow_share > 0. else base
 
   if not e2e:
     a_total_max = np.interp(v_ego, _A_TOTAL_MAX_BP, _A_TOTAL_MAX_V)
@@ -171,7 +199,7 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
                                      self.a_cruise, steer_angle_without_offset, self.CP, self.dt,
                                      accel_coast, self.allow_throttle,
                                      self.keep_pace(sm['radarState'].leadOne, sm['selfdriveState'].personality, v_ego),
-                                     self.scc.governor.throttle_scale())
+                                     self.scc.governor.throttle_scale(), sm['selfdriveState'].personality)
     cruise_should_stop = should_stop(v_ego, self.a_cruise)
 
     candidates = [(output_a_target_mpc, self.mpc.source, output_should_stop_mpc),

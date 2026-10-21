@@ -13,10 +13,10 @@ from opendbc.car import structs
 from openpilot.common.params import Params, ParamKeyFlag, UnknownKeyName
 from openpilot.common.test import OpenpilotTestCase
 from openpilot.selfdrive.controls.lib.longitudinal_planner import LongitudinalPlanner, get_max_accel, get_cruise_accel, \
-  A_CRUISE_MAX_VALS, A_FOLLOW_MAX_VALS
+  A_CRUISE_MAX_VALS, A_FOLLOW_MAX_VALS, apply_launch_cap
 from openpilot.selfdrive.controls.lib.longitudinal_mpc_lib.long_mpc import get_safe_obstacle_distance, get_stopped_equivalence_factor
 from openpilot.sunnypilot.selfdrive.controls.lib.longitudinal_planner import LongitudinalPlannerSP, KEEP_PACE_READ_FRAMES, \
-  KEEP_PACE_V_MIN, KEEP_PACE_EXCESS_BP, KEEP_PACE_OFF_FRAMES, keep_pace_share
+  KEEP_PACE_V_MIN, KEEP_PACE_EXCESS_BP, KEEP_PACE_OFF_FRAMES, KEEP_PACE_SHARE_STANDARD, KEEP_PACE_SHARE_RELAXED, keep_pace_share
 from openpilot.sunnypilot.selfdrive.controls.lib.tests.test_traffic_mode import MockSubMaster
 
 Personality = log.LongitudinalPersonality
@@ -215,5 +215,8 @@ class TestKeepPacePlanner(OpenpilotTestCase):
     keep = self.run_planner(True)
     self.assertAlmostEqual(keep.a_cruise, 2.0, places=3)
     assert keep.output_a_target <= 2.0 + 1e-6
-    for personality, cap in ((STANDARD, 1.7), (RELAXED, 1.55)):
-      self.assertAlmostEqual(self.run_planner(True, personality).a_cruise, cap, places=3)
+    # the softer personalities' step starts from their launch cap (still fading out at 5 m/s), so less than 1.7 / 1.55
+    for personality, share in ((STANDARD, KEEP_PACE_SHARE_STANDARD), (RELAXED, KEEP_PACE_SHARE_RELAXED)):
+      base = apply_launch_cap(get_max_accel(5.), 5., personality)
+      assert base < get_max_accel(5.)
+      self.assertAlmostEqual(self.run_planner(True, personality).a_cruise, base + share * (2.0 - base), places=3)
