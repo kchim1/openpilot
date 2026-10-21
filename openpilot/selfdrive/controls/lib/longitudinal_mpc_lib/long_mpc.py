@@ -113,6 +113,18 @@ LAUNCH_ASSIST_V_LEAD_K_MIN = 0.15  # filtered speed too, so one noisy raw vLead 
 LAUNCH_ASSIST_A_LEAD_MIN = 0.1
 LAUNCH_ASSIST_A_LEAD_TAU = 0.3
 
+# Brake Sooner for Stops, set by the sunnypilot planner: closing on a stopped or slow lead, plan as if the comfort
+# brake were approach_comfort_brake instead of COMFORT_BRAKE, so braking starts sooner and peaks lower. The solver's
+# desired distance is fixed at build time, so the lead's obstacle moves closer by the difference in its v_ego^2 term (at
+# the speeds the last plan expected) less the same term at the lead's speed: none at the lead's speed, none at a stop.
+# All of it for a lead at 3 m/s or less, none from 8 m/s, so following moving traffic is unchanged. Only while a gentle
+# stop is still possible (the constant decel to stop STOP_DISTANCE short of where the lead stops: all of it up to
+# 1.2 m/s^2, none from 1.7), so a car seen late gets the stock plan instead of harder braking. Built up at most
+# APPROACH_MARGIN_RATE so a new lead or a lead switch doesn't jolt the plan.
+APPROACH_V_LEAD_BP = [3., 8.]
+APPROACH_DECEL_BP = [1.2, 1.7]
+APPROACH_MARGIN_RATE = 10.  # m/s
+
 
 def get_stopped_equivalence_factor(v_lead):
   return (v_lead**2) / (2 * COMFORT_BRAKE)
@@ -256,6 +268,8 @@ class LongitudinalMpc:
     self.traffic_mode = False
     # Rivian Launch Assist, set by the sunnypilot planner while driving
     self.launch_assist = False
+    # Brake Sooner for Stops, set by the sunnypilot planner while driving (COMFORT_BRAKE: off)
+    self.approach_comfort_brake = COMFORT_BRAKE
     # follow time and jerk factor last passed to the solver, for logging
     self.t_follow = get_T_FOLLOW()
     self.jerk_factor = get_jerk_factor()
@@ -268,6 +282,7 @@ class LongitudinalMpc:
 
     self.x_sol = np.zeros((N+1, X_DIM))
     self.u_sol = np.zeros((N, 1))
+    self.approach_margin_last = [0., 0.]  # largest approach margin applied last frame, per lead
     self.v_solution = np.zeros(N+1)
     self.a_solution = np.zeros(N+1)
     self.j_solution = np.zeros(N)
@@ -356,6 +371,23 @@ class LongitudinalMpc:
     lead_xv = self.extrapolate_lead(x_lead, v_lead, a_lead, a_lead_tau)
     return lead_xv
 
+  def approach_margin(self, idx, lead, lead_xv):
+    """Brake Sooner for Stops: how much closer to put this lead's obstacle at each step of the horizon"""
+    k = 1 / (2 * self.approach_comfort_brake) - 1 / (2 * COMFORT_BRAKE)
+    if k <= 0. or lead is None or not lead.present or not lead.radar:
+      self.approach_margin_last[idx] = 0.
+      return np.zeros(N+1)
+    v_ego = self.x0[1]
+    # the solver's v_ego is symbolic: use the last plan's speeds, or the current speed if that plan is stale
+    v_plan = self.x_sol[:,1] if abs(self.x_sol[0,1] - v_ego) < 1. else np.full(N+1, v_ego)
+    margin = k * np.clip(v_plan**2 - lead_xv[:,1]**2, 0., None)
+    d_stop = max(lead_xv[0,0] + get_stopped_equivalence_factor(lead_xv[0,1]) - STOP_DISTANCE, 0.1)
+    margin *= np.interp(lead_xv[0,1], APPROACH_V_LEAD_BP, [1., 0.]) * np.interp(v_ego**2 / (2 * d_stop), APPROACH_DECEL_BP, [1., 0.])
+    target = float(np.max(margin))
+    applied = min(target, self.approach_margin_last[idx] + APPROACH_MARGIN_RATE * self.dt)
+    self.approach_margin_last[idx] = applied
+    return margin * (applied / target) if target > 1e-3 else np.zeros(N+1)
+
   def get_t_follow_offset_pct(self):
     # Traffic Mode ignores the offset (the stored setting is untouched and applies again once it is off)
     return 0. if self.traffic_mode else clip_t_follow_offset_pct(self.t_follow_offset_pct)
@@ -377,8 +409,8 @@ class LongitudinalMpc:
     # To estimate a safe distance from a moving lead, we calculate how much stopping
     # distance that lead needs as a minimum. We can add that to the current distance
     # and then treat that as a stopped car/obstacle at this new distance.
-    lead_0_obstacle = lead_xv_0[:,0] + get_stopped_equivalence_factor(lead_xv_0[:,1])
-    lead_1_obstacle = lead_xv_1[:,0] + get_stopped_equivalence_factor(lead_xv_1[:,1])
+    lead_0_obstacle = lead_xv_0[:,0] + get_stopped_equivalence_factor(lead_xv_0[:,1]) - self.approach_margin(0, radarstate.leadOne, lead_xv_0)
+    lead_1_obstacle = lead_xv_1[:,0] + get_stopped_equivalence_factor(lead_xv_1[:,1]) - self.approach_margin(1, radarstate.leadTwo, lead_xv_1)
 
     x_obstacles = np.column_stack([lead_0_obstacle, lead_1_obstacle])
     self.source = MPC_SOURCES[np.argmin(x_obstacles[0])]

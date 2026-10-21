@@ -13,8 +13,8 @@ from openpilot.common.swaglog import cloudlog
 from openpilot.selfdrive.car.cruise import V_CRUISE_MAX
 import numpy as np
 
-from openpilot.selfdrive.controls.lib.longitudinal_mpc_lib.long_mpc import clip_t_follow_offset_pct, get_safe_obstacle_distance, \
-  get_stopped_equivalence_factor
+from openpilot.selfdrive.controls.lib.longitudinal_mpc_lib.long_mpc import COMFORT_BRAKE, STOP_DISTANCE, clip_t_follow_offset_pct, \
+  get_safe_obstacle_distance, get_stopped_equivalence_factor
 from openpilot.sunnypilot.selfdrive.controls.lib.dec.dec import DynamicExperimentalController
 from openpilot.sunnypilot.selfdrive.controls.lib.e2e_alerts_helper import E2EAlertsHelper
 from openpilot.sunnypilot.selfdrive.controls.lib.red_light_stop import RedLightStop
@@ -50,6 +50,32 @@ KEEP_PACE_SHARE_AGGRESSIVE = 1.0
 KEEP_PACE_SHARE_STANDARD = 0.5
 KEEP_PACE_SHARE_RELAXED = 0.25
 
+# Brake Sooner for Stops, in the lead planner too (radar cruise or end to end, DEC on or off): a stopped car the radar
+# picks up far ahead used to bring an abrupt swing from the cruise throttle into braking. Route 0000001d 7:36: 133 m out
+# from 40 mph while accelerating at +1 m/s^2, the request fell to -0.3 in one frame (3.2 m/s^3 felt over half a second)
+# and peaked at -1.8 (2.1 felt).
+# - Closing on a stopped or slow car, the lead planner plans as if its comfort brake were this instead of 2.5, so braking
+#   starts sooner and peaks lower (long_mpc.py approach_margin, which keeps it to cars at 8 m/s or less and to stops that
+#   can still be gentle).
+BRAKE_SOONER_COMFORT_BRAKE = 1.5
+# - And the start of braking eases in at APPROACH_ONSET_JERK while the constant decel that stops STOP_DISTANCE short of
+#   where the car would stop is under the first APPROACH_ONSET_NEED_BP, the limit rising to APPROACH_ONSET_JERK_URGENT
+#   toward the second, and from the second on there is no limit at all: a car seen late gets the stock braking at once.
+#   Only the start: from the first APPROACH_ONSET_A_BP to the second the limit rises too, and from the second there is
+#   none, so it lets go without a step. None behind a car braking harder than APPROACH_ONSET_A_LEAD, within the stop
+#   distance already, or on the frame after a reset (gas override, engaging), whose state is the truck's own accel.
+#   On 7:36 in closed loop: 1.7 m/s^3 felt at the start instead of 3.2, the peak about the same (2.14 vs 2.11)
+APPROACH_ONSET_JERK = 1.5         # m/s^3
+APPROACH_ONSET_JERK_URGENT = 5.0  # m/s^3
+APPROACH_ONSET_NEED_BP = [1.5, 2.5]
+APPROACH_ONSET_A_BP = [-0.5, -1.5]  # m/s^2
+APPROACH_ONSET_V_LEAD_MAX = 8.    # m/s
+APPROACH_ONSET_OTHER_MARGIN = 0.5 # m/s^2: braking asked for beyond what the lead needs by more than this is for something
+                                  # else (the model stopping for a light in front of it, a cut-in): not eased
+APPROACH_ONSET_RESET_HOLD = 1.0   # s: after a reset (gas override, engaging) the state is the truck's own accel: no ease-in
+                                  # until the plan first gets to 0, or for this long
+APPROACH_ONSET_A_LEAD = -2.       # m/s^2
+
 
 def keep_pace_share(personality) -> float:
   # compared like get_T_FOLLOW does: selfdriveState.personality is a capnp enum, not a dict key
@@ -84,6 +110,7 @@ class LongitudinalPlannerSP:
     self._launch_assist_frame = 0
     self._launch_assist_error_logged = False
     self.red_light_stop = RedLightStop(CP, self._params)
+    self.approach_need = 0.
     self.stop_behind_lead = StopBehindLead(CP)
     self._keep_pace_available = CP.openpilotLongitudinalControl
     self._keep_pace_enabled = False
@@ -159,6 +186,22 @@ class LongitudinalPlannerSP:
       self._keep_pace_frames -= 1
     return self._keep_pace_share if self._keep_pace_frames > 0 else 0.
 
+  def approach_onset_jerk(self, lead, v_ego: float, a_prev: float = 0.) -> float | None:
+    """Brake Sooner for Stops: how fast braking may build up from a_prev (m/s^3), or None for no limit."""
+    if not self.dec.brake_sooner() or not (lead.present and lead.radar):
+      return None
+    if lead.vLeadK > APPROACH_ONSET_V_LEAD_MAX or lead.aLeadK < APPROACH_ONSET_A_LEAD:
+      return None
+    stop_room = lead.dRel + get_stopped_equivalence_factor(max(lead.vLeadK, 0.)) - STOP_DISTANCE
+    if stop_room <= 1.:
+      return None
+    need = v_ego ** 2 / (2. * stop_room)
+    self.approach_need = need
+    if need >= APPROACH_ONSET_NEED_BP[1] or a_prev <= APPROACH_ONSET_A_BP[1]:
+      return None
+    jerk = float(np.interp(need, APPROACH_ONSET_NEED_BP, [APPROACH_ONSET_JERK, APPROACH_ONSET_JERK_URGENT]))
+    return float(np.interp(a_prev, APPROACH_ONSET_A_BP[::-1], [APPROACH_ONSET_JERK_URGENT, jerk]))
+
   def is_e2e(self, sm: messaging.SubMaster) -> bool:
     experimental_mode = sm['selfdriveState'].experimentalMode
     if not self.dec.active():
@@ -223,6 +266,7 @@ class LongitudinalPlannerSP:
     self.red_light_stop.update_offset()
     self.update_keep_pace()
     self.dec.update(sm)
+    self._mpc.approach_comfort_brake = BRAKE_SOONER_COMFORT_BRAKE if self.dec.brake_sooner() else COMFORT_BRAKE
     self.e2e_alerts_helper.update(sm, self.events_sp)
 
   def publish_longitudinal_plan_sp(self, sm: messaging.SubMaster, pm: messaging.PubMaster) -> None:

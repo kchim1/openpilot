@@ -742,16 +742,11 @@
               "key": "BrakeSoonerForStops",
               "widget": "toggle",
               "title": "Brake Sooner for Stops",
-              "description": "Dynamic Experimental Control waits until the driving model wants fairly firm braking before it lets the model slow the truck, and above 37 mph that wait gets longer the faster you go. With this on, the model can start slowing for a red light, a stop sign or stopped traffic sooner, about 1.5 seconds sooner at 45 mph and 2.5 to 3 seconds at 50 to 55 mph, so braking starts earlier and builds up gently instead of coming on all at once. Above 62 mph it keeps the 62 mph setting, so it still hands over sooner than without it. With no car ahead it can also hand over briefly on a sharp curve, where the model may ease off a little. Only with Experimental Mode and Dynamic Experimental Control both on. Can be changed while driving.",
+              "description": "Two parts. For stopped or slow cars the radar picks up ahead, in any mode, braking starts sooner and builds up more gently. It plans the stop with about 1.5 m/s\u00b2 of braking instead of 2.5, and the swing from the gas into braking eases in. That only applies while a gentle stop is still possible; a car seen late gets the normal, firmer braking. For red lights, stop signs and stopped traffic the driving model sees first, Dynamic Experimental Control waits until the model wants fairly firm braking before it lets the model slow the truck, and above 37 mph that wait gets longer the faster you go. With this on, it hands over about 1.5 seconds sooner at 45 mph and 2.5 to 3 seconds sooner at 50 to 55 mph. Above 62 mph it keeps the 62 mph setting. With no car ahead it can also hand over briefly on a sharp curve, where the model may ease off a little. That second part needs Experimental Mode and Dynamic Experimental Control both on. Can be changed while driving.",
               "enablement": [
                 {
                   "type": "capability",
                   "field": "has_longitudinal_control",
-                  "equals": true
-                },
-                {
-                  "type": "param",
-                  "key": "DynamicExperimentalControl",
                   "equals": true
                 }
               ]

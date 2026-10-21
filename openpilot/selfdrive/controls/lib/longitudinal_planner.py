@@ -16,7 +16,8 @@ from openpilot.selfdrive.controls.lib.drive_helpers import CONTROL_N, get_accel_
 from openpilot.selfdrive.car.cruise import V_CRUISE_MAX, V_CRUISE_UNSET
 from openpilot.common.swaglog import cloudlog
 
-from openpilot.sunnypilot.selfdrive.controls.lib.longitudinal_planner import LongitudinalPlannerSP
+from openpilot.sunnypilot.selfdrive.controls.lib.longitudinal_planner import LongitudinalPlannerSP, APPROACH_ONSET_OTHER_MARGIN, \
+  APPROACH_ONSET_RESET_HOLD
 
 A_CRUISE_MAX_VALS = [1.6, 1.2, 0.8, 0.6]
 A_CRUISE_MAX_BP = [0., 10.0, 25., 40.]
@@ -112,6 +113,7 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     self.dt = dt
     self.allow_throttle = True
     self.e2e_prev = False
+    self.onset_hold = int(round(APPROACH_ONSET_RESET_HOLD / self.dt))
 
     self.v_desired_filter = FirstOrderFilter(init_v, 2.0, self.dt)
     self.a_cruise = init_a
@@ -219,6 +221,17 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
 
     output_a_target, self.mpc.source, _ = min(candidates, key=lambda c: c[0])
     self.output_should_stop = any(should_stop for _, _, should_stop in candidates)
+    # Brake Sooner for Stops: ease into braking for a stopped or slow car while a gentle stop is still possible. Only the
+    # braking that car calls for: a request for clearly more is for something else and goes through. Not after a reset
+    # (gas override, engaging) until the plan first gets to 0, since a_prev is then the truck's own accel
+    onset_jerk = self.approach_onset_jerk(sm['radarState'].leadOne, v_ego, a_prev)
+    if onset_jerk is not None and not self.fcw and self.onset_hold == 0 and \
+       output_a_target >= -(self.approach_need + APPROACH_ONSET_OTHER_MARGIN):
+      output_a_target = max(output_a_target, a_prev - onset_jerk * self.dt)
+    if reset_state:
+      self.onset_hold = int(round(APPROACH_ONSET_RESET_HOLD / self.dt))
+    elif self.onset_hold > 0:
+      self.onset_hold = 0 if output_a_target <= 0. else self.onset_hold - 1
     self.output_a_target = np.clip(output_a_target, ACCEL_MIN, ACCEL_MAX)
 
     self.v_desired_filter.x = self.v_desired_filter.x + self.dt * (self.output_a_target + a_prev) / 2.0
