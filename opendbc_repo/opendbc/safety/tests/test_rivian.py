@@ -3,6 +3,8 @@ import unittest
 from types import SimpleNamespace
 import numpy as np
 
+from opendbc.can import CANParser
+
 from opendbc.car import Bus, structs
 from opendbc.car.lateral import get_max_angle_delta_vm, get_max_angle_vm
 from opendbc.car.rivian.carcontroller import get_safety_CP
@@ -12,6 +14,7 @@ from opendbc.car.rivian.values import CAR, CarControllerParams, RivianSafetyFlag
 from opendbc.car.rivian.riviancan import checksum as _checksum
 from opendbc.car.structs import CarParams
 from opendbc.car.vehicle_model import VehicleModel
+from opendbc.safety import ALTERNATIVE_EXPERIENCE
 from opendbc.safety.tests.libsafety import libsafety_py
 import opendbc.safety.tests.common as common
 from opendbc.safety.tests.common import CANPackerSafety
@@ -400,6 +403,205 @@ class TestRivianLongRequestSafety(unittest.TestCase):
         self._rx_car(gas, brake, 1 if cruise else 0)
         self.assertFalse(self.safety.get_longitudinal_allowed())
         self.assertTrue(self.safety.safety_tx_hook(self._controller_frame(gas, brake, cruise)))
+
+
+MADS_DISENGAGE = ALTERNATIVE_EXPERIENCE.ENABLE_MADS | ALTERNATIVE_EXPERIENCE.MADS_DISENGAGE_LATERAL_ON_BRAKE
+MADS_PAUSE = ALTERNATIVE_EXPERIENCE.ENABLE_MADS | ALTERNATIVE_EXPERIENCE.MADS_PAUSE_LATERAL_ON_BRAKE
+MADS_REMAIN_ACTIVE = ALTERNATIVE_EXPERIENCE.ENABLE_MADS
+NO_MADS = ALTERNATIVE_EXPERIENCE.DEFAULT
+
+
+class TestRivianBrakeLateralSafety(unittest.TestCase):
+  """The real CarController's steering frames (0x110 angle, 0x120 cooperative torque) through the panda safety model,
+  from the frame the panda first sees the brake, while carControl still asks for steering for a few frames. The panda
+  ends lateral on the press unless MADS is set to "Remain active", and refuses every frame that still steers. The rack
+  sees refused frames as a gap in the message counter and latches EPAS_Angle_Control_Cntr_Err ("LKAS Fault")."""
+
+  FRAME_US = 10_000
+
+  def setUp(self):
+    self.packer = CANPackerSafety("rivian_primary_actuator")
+    self.safety = libsafety_py.libsafety
+    self.safety.set_safety_hooks(CarParams.SafetyModel.rivian, RivianSafetyFlags.LONG_CONTROL)
+
+  def _start(self, alternative_experience, torque=False, speed=12.0, brake=False):
+    self.safety.init_tests()
+    self.safety.set_alternative_experience(alternative_experience)
+    self.safety.mads_apply_alternative_experience(alternative_experience)
+    self.safety.set_heartbeat_engaged_mads(True)
+    self.t = 1_000_000
+    self.cnt = 0
+    self.speed = speed
+
+    CP = CarInterface.get_non_essential_params(CAR.RIVIAN_R1)
+    CP.openpilotLongitudinalControl = True
+    CP.alternativeExperience = alternative_experience
+    self.CI = CarInterface(CP, structs.CarParamsSP())
+    CS = self.CI.CS
+    CS.acm_lka_hba_cmd = dict(self.CI.can_parsers[Bus.cam].vl["ACM_lkaHbaCmd"])
+    CS.sccm_wheel_touch = {**self.CI.can_parsers[Bus.pt].vl["SCCM_WheelTouch"], "SCCM_WheelTouch_Calibration": 100}
+    CS.vdm_adas_status = [dict(self.CI.can_parsers[Bus.pt].vl["VDM_AdasSts"])]
+    self.CI.CC.erc.force_torque = torque
+    self.eac_status = 1  # the rack is ready for angle control, and steers on angle once asked to
+
+    # the car (enough to fill the panda's speed and angle samples), then the ACM entering cruise: the panda allows
+    # control, and with MADS lateral too
+    self.safety.set_desired_angle_last(0)
+    for feature_status in (0, 0, 0, 0, 0, 0, 1):
+      self._rx_car(brake, feature_status)
+
+  def _rx(self, name, bus, values):
+    self.assertTrue(self.safety.safety_rx_hook(self.packer.make_can_msg_safety(name, bus, values, fix_checksum=checksum)))
+
+  def _rx_car(self, brake, feature_status):
+    self.cnt += 1
+    kph = self.speed * 3.6
+    self._rx("ESP_Status", 0, {"ESP_Vehicle_Speed": kph, "ESP_Status_Counter": self.cnt % 15, "ESP_Vehicle_Speed_Q": 1})
+    self._rx("VDM_PropStatus", 0, {"VDM_AcceleratorPedalPosition": 0, "VDM_VehicleSpeed": kph,
+                                   "VDM_PropStatus_Counter": self.cnt % 15, "VDM_VehicleSpeedQ": 1})
+    self._rx("EPAS_AdasStatus", 0, {"EPAS_InternalSas": 0.0, "EPAS_EacStatus": self.eac_status})
+    self._rx("EPAS_SystemStatus", 0, {"EPAS_TorsionBarTorque": 0.0})
+    self._rx("iBESP2", 0, {"iBESP2_BrakePedalApplied": int(brake)})
+    self._rx("ACM_Status", 2, {"ACM_FeatureStatus": feature_status, "ACM_Unkown1": 1})
+
+  def _frame(self, lat_active, brake, cruise=True):
+    """One 10 ms frame: the panda reads the car, then the controller's frame from the same CAN goes out.
+    Returns whether 0x110 and 0x120 were let through, and whether the frame was steering."""
+    self.t += self.FRAME_US
+    self.safety.set_timer(self.t)
+    self._rx_car(brake, 1 if cruise else 0)
+    CS = self.CI.CS
+    CS.eac_status = self.eac_status
+    CS.out = structs.CarState(gearShifter=structs.CarState.GearShifter.drive, vEgo=self.speed, vEgoRaw=self.speed,
+                              brakePressed=brake, standstill=self.speed == 0, cruiseState={"enabled": cruise})
+    car_control = structs.CarControl(enabled=lat_active, latActive=lat_active, longActive=lat_active and cruise and not brake,
+                                     actuators={"steeringAngleDeg": 2.0, "torque": 0.5}).as_reader()
+    _, can_sends = self.CI.CC.update(car_control, structs.CarControlSP(), CS, 0)
+    self.can_sends = can_sends
+    ok, steering = True, False
+    for addr, dat, bus in can_sends:
+      if addr in (0x110, 0x120):
+        ok &= self.safety.safety_tx_hook(libsafety_py.make_CANPacket(addr, bus, dat))
+        steering |= bool((dat[1] >> 4) & 1) if addr == 0x110 else ((dat[2] << 3) | (dat[3] >> 5)) != 1024
+    if self.CI.CC.erc.angle_active:
+      self.eac_status = 2
+    return ok, steering
+
+  def _engage(self, frames=40, brake=False, cruise=True):
+    # lateral engaged long enough for the torque ramp to be well under way; every frame is let through
+    for _ in range(frames):
+      self.assertEqual(self._frame(True, brake, cruise), (True, True))
+
+  def _reengage(self, brake=False):
+    # carControl has dropped lateral; the ACM leaves cruise and enters it again, which gives the panda control back
+    for _ in range(3):
+      self.assertEqual(self._frame(False, brake, cruise=False), (True, False))
+    self.eac_status = 1  # the rack is back to ready once angle control has ended
+    self._engage(brake=brake)
+
+  def test_brake_press_ends_steering_on_the_same_frame(self):
+    for alt_exp in (MADS_DISENGAGE, MADS_PAUSE, NO_MADS):
+      for torque in (False, True):
+        for speed in (12.0, 0.0):
+          with self.subTest(alternative_experience=alt_exp, torque=torque, speed=speed):
+            self._start(alt_exp, torque, speed)
+            self._engage()
+            # the panda reads the press with this frame's CAN; carControl still asks for steering for three more frames
+            for lag in range(4):
+              self.assertEqual(self._frame(True, True), (True, False), f"frame {lag} of the press")
+            self.assertEqual(self._frame(False, True), (True, False))
+
+  def test_remain_active_keeps_steering_through_the_brake(self):
+    for torque in (False, True):
+      for speed in (12.0, 0.0):
+        for cruise in (True, False):  # with the ACM in cruise, and lateral only (MADS engaged, cruise off)
+          with self.subTest(torque=torque, speed=speed, cruise=cruise):
+            self._start(MADS_REMAIN_ACTIVE, torque, speed)
+            self._engage(cruise=cruise)
+            self.assertTrue(self.safety.get_controls_allowed_lateral())
+            for _ in range(10):
+              self.assertEqual(self._frame(True, True, cruise), (True, True))
+            self.assertEqual(self._frame(True, False, cruise), (True, True))
+
+  def test_lateral_only_ends_on_the_brake(self):
+    # MADS engaged with the ACM out of cruise: lateral rides on controls_allowed_lateral alone, which the press ends
+    for alt_exp in (MADS_DISENGAGE, MADS_PAUSE):
+      with self.subTest(alternative_experience=alt_exp):
+        self._start(alt_exp)
+        self._engage(cruise=False)
+        self.assertFalse(self.safety.get_controls_allowed())
+        self.assertTrue(self.safety.get_controls_allowed_lateral())
+        for _ in range(3):
+          self.assertEqual(self._frame(True, True, cruise=False), (True, False))
+
+  def test_short_press_does_not_bring_steering_back_early(self):
+    # released before carControl has caught up: still refused by the panda, unless MADS pauses, which gives it back
+    for alt_exp in (MADS_DISENGAGE, NO_MADS, MADS_PAUSE):
+      with self.subTest(alternative_experience=alt_exp):
+        self._start(alt_exp)
+        self._engage()
+        self.assertEqual(self._frame(True, True), (True, False))
+        self.assertEqual(self._frame(True, True), (True, False))
+        back = alt_exp == MADS_PAUSE
+        self.assertEqual(self._frame(True, False), (True, back))
+        self.assertEqual(self._frame(True, False), (True, back))
+        if not back:
+          self.assertEqual(self._frame(False, False), (True, False))
+
+  def test_brake_held_through_engagement_is_not_a_press(self):
+    # at a standstill with the brake already held when cruise engages, the panda keeps control: so does the controller
+    for alt_exp in (NO_MADS, MADS_DISENGAGE):
+      with self.subTest(alternative_experience=alt_exp):
+        self._start(alt_exp, speed=0.0, brake=True)
+        self.assertEqual(self._frame(False, True), (True, False))
+        self._engage(brake=True)
+        self.assertTrue(self.safety.get_controls_allowed())
+
+  def test_brake_held_ends_steering_once_moving(self):
+    # held from a standstill through the engagement, then the truck creeps: without MADS the panda ends control on a held
+    # brake while moving, and selfdrived disengages on it either way
+    for alt_exp in (NO_MADS, MADS_DISENGAGE):
+      for torque in (False, True):
+        with self.subTest(alternative_experience=alt_exp, torque=torque):
+          self._start(alt_exp, torque, speed=0.0, brake=True)
+          self.assertEqual(self._frame(False, True), (True, False))
+          self._engage(brake=True)
+          self.speed = 0.5
+          for lag in range(3):
+            self.assertEqual(self._frame(True, True), (True, False), f"frame {lag} moving")
+          self.assertEqual(self._frame(False, True), (True, False))
+
+  def test_steering_returns_after_reengaging_and_the_next_press_ends_it(self):
+    for alt_exp in (MADS_DISENGAGE, NO_MADS):
+      for torque in (False, True):
+        for speed in (12.0, 0.0):
+          with self.subTest(alternative_experience=alt_exp, torque=torque, speed=speed):
+            self._start(alt_exp, torque, speed)
+            self._engage()
+            self.assertEqual(self._frame(True, True), (True, False))
+            self.assertEqual(self._frame(False, True), (True, False))
+            self.assertEqual(self._frame(False, False), (True, False))
+            self._reengage()
+            self.assertEqual(self._frame(True, True), (True, False), "second press")
+            self.assertEqual(self._frame(False, True), (True, False))
+
+  def test_resume_at_a_stop_with_the_brake_still_held(self):
+    # pressed at a standstill and held; resuming with the brake still held steers again, as the panda allows
+    for alt_exp in (MADS_DISENGAGE, NO_MADS):
+      with self.subTest(alternative_experience=alt_exp):
+        self._start(alt_exp, speed=0.0)
+        self._engage()
+        self.assertEqual(self._frame(True, True), (True, False))
+        self.assertEqual(self._frame(False, True), (True, False))
+        self._reengage(brake=True)
+
+  def test_acm_feature_status_follows_on_the_press_frame(self):
+    self._start(MADS_DISENGAGE)
+    self._engage()
+    self.assertEqual(self._frame(True, True), (True, False))
+    parser = CANParser("rivian_primary_actuator", [("ACM_Status", 0)], 0)
+    parser.update([(self.t * 1000, [m for m in self.can_sends if m[0] == 0x100])])
+    self.assertEqual(parser.vl["ACM_Status"]["ACM_FeatureStatus"], 0)
 
 
 class TestRivianIgnition(unittest.TestCase):

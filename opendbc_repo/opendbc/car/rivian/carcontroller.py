@@ -7,11 +7,24 @@ from opendbc.car.rivian.ext_controller import ExternalController, get_safety_CP 
 from opendbc.car.rivian.riviancan import (create_angle_steering, create_lka_steering, create_longitudinal, create_wheel_touch,
                                           create_adas_status, create_acm_status)
 from opendbc.car.rivian.values import CarControllerParams, RivianFlags
+from opendbc.safety import ALTERNATIVE_EXPERIENCE
 
 from opendbc.sunnypilot.car.rivian.mads import MadsCarController
 
 
 GearShifter = structs.CarState.GearShifter
+
+# MADS steering modes in which a brake press ends lateral at the panda (opendbc/safety/sunnypilot/mads.h)
+MADS_LATERAL_OFF_ON_BRAKE = ALTERNATIVE_EXPERIENCE.MADS_DISENGAGE_LATERAL_ON_BRAKE | ALTERNATIVE_EXPERIENCE.MADS_PAUSE_LATERAL_ON_BRAKE
+
+
+def panda_drops_lateral_on_brake(alternative_experience: int) -> bool:
+  """Whether a brake press ends lateral at the panda. Without MADS steering is allowed by controls_allowed, which a press
+  clears (opendbc/safety/safety.h). With MADS it is also allowed by controls_allowed_lateral, which a press clears only
+  when MADS is set to disengage or pause steering on the brake, not with "Remain active"."""
+  if not alternative_experience & ALTERNATIVE_EXPERIENCE.ENABLE_MADS:
+    return True
+  return bool(alternative_experience & MADS_LATERAL_OFF_ON_BRAKE)
 
 # The stock ACM answers an ACC stalk press within ~30 ms when it takes it. If it hasn't after this long, it declined.
 ACM_ENGAGE_TIMEOUT_FRAMES = 50  # 0.5 s
@@ -49,9 +62,39 @@ class CarController(CarControllerBase, MadsCarController):
     self.engage_press_not_ready = False
     self.engage_press_low_speed = False
     self.erc = ExternalController()
+    # lateral held off from a brake press the panda ends lateral on until carControl catches up, see update_brake_lateral
+    self.brake_lat_off = False
+    self.brake_pressed_prev = False
+
+  def update_brake_lateral(self, CC, CS) -> None:
+    """Stop steering on the frame a brake press shows up in CarState, when the panda ends lateral on it.
+
+    The panda reads the pedal off the bus and ends lateral at once, while carControl asks for steering until selfdrived
+    and controlsd have seen the press (one frame on this truck). Every angle (0x110) or cooperative torque (0x120) frame
+    that still steers in between is refused, and the rack sees refused frames as a gap in the message counter: four in a
+    row on an AdventurePilot truck latched EPAS_Angle_Control_Cntr_Err ("LKAS Fault: Restart the car to engage").
+
+    On a press, or the brake held while moving, as at the panda (safety.h) and in selfdrived: a brake already held at a
+    standstill when lateral engaged leaves it on until the truck moves. Steering then stays off until carControl drops
+    lateral too, so a press shorter than that lag cannot turn it back on while the panda still refuses it, except with
+    MADS set to pause, where the panda gives lateral back on release.
+    """
+    alt_exp = self.CP.alternativeExperience
+    brake = CS.out.brakePressed
+    press = brake and (not self.brake_pressed_prev or not CS.out.standstill)
+    if press and self.mads.lat_active and panda_drops_lateral_on_brake(alt_exp):
+      self.brake_lat_off = True
+    self.brake_pressed_prev = brake
+
+    paused = bool(alt_exp & ALTERNATIVE_EXPERIENCE.ENABLE_MADS and alt_exp & ALTERNATIVE_EXPERIENCE.MADS_PAUSE_LATERAL_ON_BRAKE)
+    if not CC.latActive or (paused and not brake):
+      self.brake_lat_off = False
+    if self.brake_lat_off:
+      self.mads = self.mads._replace(lat_active=False)
 
   def update(self, CC, CC_SP, CS, now_nanos):
     MadsCarController.update(self, CC, CC_SP, CS)
+    self.update_brake_lateral(CC, CS)
     actuators = CC.actuators
     can_sends = []
 
@@ -103,6 +146,11 @@ class CarController(CarControllerBase, MadsCarController):
       if not resend:
         self.long_cmd_counter += 1
       can_sends.append(create_longitudinal(self.packer, self.long_cmd_counter, accel, long_enabled))
+      # what went out next to the truck's answer, for the cruise fault record (acc_fault_recorder). getattr: some tests
+      # drive this controller with a stand-in CarState
+      recorder = getattr(CS, "acc_fault_recorder", None)
+      if recorder is not None:
+        recorder.record_command(accel, long_enabled, long_allowed, self.long_cmd_counter % 15)
 
       # If openpilot would refuse to engage (NO_ENTRY), hide the driver's ACC engage request from the ACM so it never
       # enters ACC. Once the ACM is in ACC with nothing accepting its long request, it latches a fault that only

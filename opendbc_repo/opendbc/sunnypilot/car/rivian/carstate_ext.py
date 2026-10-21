@@ -12,6 +12,7 @@ from opendbc.can.parser import CANParser
 from opendbc.car.common.conversions import Conversions as CV
 from opendbc.car.rivian.values import DBC
 from opendbc.sunnypilot.car import TRAFFIC_MODE_BUTTON
+from opendbc.sunnypilot.car.rivian.acc_fault_recorder import AccFaultRecorder
 from opendbc.sunnypilot.car.rivian.values import RivianFlagsSP
 
 ButtonType = structs.CarState.ButtonEvent.Type
@@ -36,6 +37,7 @@ class CarStateExt:
     self.increase_counter = 0
     self.decrease_counter = 0
     self.decrease_press_enabled = False
+    self.acc_fault_recorder = AccFaultRecorder()
 
   def update_longitudinal_upgrade(self, ret: structs.CarState, can_parsers: dict[StrEnum, CANParser]) -> None:
     cp_park = can_parsers[Bus.alt]
@@ -107,6 +109,9 @@ class CarStateExt:
   def update(self, ret: structs.CarState, can_parsers: dict[StrEnum, CANParser]) -> None:
     if self.CP_SP.flags & RivianFlagsSP.LONGITUDINAL_HARNESS_UPGRADE:
       self.update_longitudinal_upgrade(ret, can_parsers)
+
+    # read only: keeps the last half second of the cruise request and the truck's answer, logged on a cruise fault
+    self.acc_fault_recorder.update(ret, can_parsers)
 
   @staticmethod
   def get_parser(CP, CP_SP) -> dict[StrEnum, CANParser]:
