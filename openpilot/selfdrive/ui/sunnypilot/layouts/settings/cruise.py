@@ -34,8 +34,9 @@ FOLLOWING_TIME_OFFSET_DESCRIPTION = tr_noop("Adjusts the gap to the car ahead in
                                             "can keep its own gap, so the change may be smaller. Takes effect on the next drive.")
 TRAFFIC_MODE_DESCRIPTION = tr_noop("Shorter gap for stop-and-go traffic: about 0.5 s behind the car ahead when nearly stopped, " +
                                    "rising to 1.0 s from about 11 mph and staying at 1.0 s at every speed until turned off " +
-                                   "(Aggressive is 1.25 s). Ignores Following Distance Offset while on. Hold the left thumb " +
-                                   "button on the steering wheel for 1 second to toggle. Stays on or off until you change it.")
+                                   "(Aggressive is 1.25 s). Ignores Following Distance Offset while on. Press and hold the right " +
+                                   "scroll wheel on the steering wheel (its middle button) for 1 second to toggle. Stays on or off " +
+                                   "until you change it.")
 CURVE_SPEED_CONTROL_DESCRIPTION = tr_noop("Slow down ahead of curves and power smoothly through them. Also slows and eases off the " +
                                           "gas when cornering nears what the steering can hold. Uses the vision path; no map data " +
                                           "required.")

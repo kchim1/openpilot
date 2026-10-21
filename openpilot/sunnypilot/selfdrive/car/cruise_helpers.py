@@ -73,7 +73,7 @@ class CruiseHelper:
       events.add(EventNameSP.trafficModeOn if traffic_mode else EventNameSP.trafficModeOff)
       self._traffic_mode_prev = traffic_mode
 
-    # one TRAFFIC_MODE_BUTTON event per toggle (Rivian: left thumb button held 1 s). Only flip the param, without
+    # one TRAFFIC_MODE_BUTTON event per toggle (Rivian: the right thumb control's middle button held 1 s). Only flip the param, without
     # blocking this 100 Hz loop: the alert above follows once params_thread reads the new value back.
     # Each carState is handled once: when no new one arrives within 20 ms, selfdrived passes the previous one again
     # (the same object, CS_prev), and flipping again would undo the toggle if params_thread has read it back meanwhile.
