@@ -124,6 +124,9 @@ LAUNCH_ASSIST_A_LEAD_TAU = 0.3
 APPROACH_V_LEAD_BP = [3., 8.]
 APPROACH_DECEL_BP = [1.2, 1.7]
 APPROACH_MARGIN_RATE = 10.  # m/s
+# None of it below APPROACH_V_EGO_BP[0], all of it from [1]: at town speeds the extra caution slowed the truck well short
+# of the car (route 00000024, 3:09: about 5 m of extra margin at 7 m/s, 31 m back); the onset at speed is unchanged
+APPROACH_V_EGO_BP = [6., 10.]
 
 
 def get_stopped_equivalence_factor(v_lead):
@@ -382,7 +385,8 @@ class LongitudinalMpc:
     v_plan = self.x_sol[:,1] if abs(self.x_sol[0,1] - v_ego) < 1. else np.full(N+1, v_ego)
     margin = k * np.clip(v_plan**2 - lead_xv[:,1]**2, 0., None)
     d_stop = max(lead_xv[0,0] + get_stopped_equivalence_factor(lead_xv[0,1]) - STOP_DISTANCE, 0.1)
-    margin *= np.interp(lead_xv[0,1], APPROACH_V_LEAD_BP, [1., 0.]) * np.interp(v_ego**2 / (2 * d_stop), APPROACH_DECEL_BP, [1., 0.])
+    margin *= np.interp(lead_xv[0,1], APPROACH_V_LEAD_BP, [1., 0.]) * np.interp(v_ego**2 / (2 * d_stop), APPROACH_DECEL_BP, [1., 0.]) * \
+              np.interp(v_ego, APPROACH_V_EGO_BP, [0., 1.])
     target = float(np.max(margin))
     applied = min(target, self.approach_margin_last[idx] + APPROACH_MARGIN_RATE * self.dt)
     self.approach_margin_last[idx] = applied
