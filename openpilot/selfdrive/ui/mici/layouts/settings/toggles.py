@@ -78,6 +78,16 @@ class TogglesLayoutMici(NavScroller):
       self._launch_assist_toggle.set_visible(False)  # shown once CarParams say Rivian with longitudinal control
     except UnknownKeyName:
       self._launch_assist_toggle = None
+    try:
+      self._curve_speed_toggle = BigParamControl("curve speed control", "CurveSpeedControl",
+                                                 description="Slows down ahead of curves from the model's path.\n" +
+                                                             "Holds a steady speed through the bend, then speeds up.\n" +
+                                                             "Slows and eases off the gas when cornering\n" +
+                                                             "nears what the steering can hold.\n" +
+                                                             "A green C shows on the road view while it slows.\n" +
+                                                             "Can be changed while driving.")
+    except UnknownKeyName:
+      self._curve_speed_toggle = None
     is_metric_toggle = BigParamControl("use metric units", "IsMetric")
     ldw_toggle = BigParamControl("lane departure warnings", "IsLdwEnabled",
                                  description="Warn when you drift across a detected lane line.\n" +
@@ -100,6 +110,7 @@ class TogglesLayoutMici(NavScroller):
       self._experimental_btn,
       *([self._traffic_mode_toggle] if self._traffic_mode_toggle is not None else []),
       *([self._launch_assist_toggle] if self._launch_assist_toggle is not None else []),
+      *([self._curve_speed_toggle] if self._curve_speed_toggle is not None else []),
       is_metric_toggle,
       ldw_toggle,
       always_on_dm_toggle,
@@ -118,7 +129,8 @@ class TogglesLayoutMici(NavScroller):
       ("RecordAudio", record_mic),
       ("OpenpilotEnabledToggle", enable_openpilot),
     ) + ((("TrafficMode", self._traffic_mode_toggle),) if self._traffic_mode_toggle is not None else ()) \
-      + ((("RivianLaunchAssist", self._launch_assist_toggle),) if self._launch_assist_toggle is not None else ())
+      + ((("RivianLaunchAssist", self._launch_assist_toggle),) if self._launch_assist_toggle is not None else ()) \
+      + ((("CurveSpeedControl", self._curve_speed_toggle),) if self._curve_speed_toggle is not None else ())
 
     enable_openpilot.set_enabled(lambda: not ui_state.engaged)
     record_front.set_enabled(False if ui_state.params.get_bool("RecordFrontLock") else (lambda: not ui_state.engaged))
@@ -166,6 +178,8 @@ class TogglesLayoutMici(NavScroller):
         self._traffic_mode_toggle.set_visible(ui_state.has_longitudinal_control)
       if self._launch_assist_toggle is not None:
         self._launch_assist_toggle.set_visible(ui_state.has_longitudinal_control and ui_state.CP.brand == "rivian")
+      if self._curve_speed_toggle is not None:
+        self._curve_speed_toggle.set_visible(ui_state.has_longitudinal_control)
 
     # Refresh toggles from params to mirror external changes
     for key, item in self._refresh_toggles:

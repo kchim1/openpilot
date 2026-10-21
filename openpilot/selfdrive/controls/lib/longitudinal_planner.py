@@ -45,7 +45,8 @@ def get_max_accel(v_ego, follow_share=0.):
 def get_coast_accel(pitch):
   return np.sin(pitch) * -5.65 - 0.3  # fitted from data using xx/projects/allow_throttle/compute_coast_accel.py
 
-def get_cruise_accel(e2e, v_cruise, v_ego, a_cruise_prev, angle_steers, CP, dt, accel_coast, allow_throttle, follow_share=0.):
+def get_cruise_accel(e2e, v_cruise, v_ego, a_cruise_prev, angle_steers, CP, dt, accel_coast, allow_throttle, follow_share=0.,
+                     throttle_scale=1.):
   max_accel = ACCEL_MAX if e2e else get_max_accel(v_ego, follow_share)
 
   if not e2e:
@@ -60,6 +61,12 @@ def get_cruise_accel(e2e, v_cruise, v_ego, a_cruise_prev, angle_steers, CP, dt, 
       clipped_accel_coast = max(accel_coast, ACCEL_MIN)
       coast_limit = np.interp(v_ego, [MIN_ALLOW_THROTTLE_SPEED, MIN_ALLOW_THROTTLE_SPEED*2], [max_accel, clipped_accel_coast])
       max_accel = min(max_accel, coast_limit)
+
+  # Curve Speed Control's throttle-fade interlock (lateral_load_governor.py): no added throttle while the steering is near
+  # or at its lateral limit. Every other candidate only lowers the target, so this caps the planner's throttle, through the
+  # cruise jerk limit. Only a positive cap is scaled: it never raises a coast limit, and never asks for braking
+  if max_accel > 0.:
+    max_accel *= throttle_scale
 
   target_accel = np.clip(v_cruise - v_ego, A_CRUISE_MIN, max_accel)
   j_cruise = np.interp(v_ego, A_CRUISE_MAX_BP, J_CRUISE_VALS)
@@ -163,7 +170,8 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     self.a_cruise = get_cruise_accel(is_e2e, v_cruise, v_ego,
                                      self.a_cruise, steer_angle_without_offset, self.CP, self.dt,
                                      accel_coast, self.allow_throttle,
-                                     self.keep_pace(sm['radarState'].leadOne, sm['selfdriveState'].personality, v_ego))
+                                     self.keep_pace(sm['radarState'].leadOne, sm['selfdriveState'].personality, v_ego),
+                                     self.scc.governor.throttle_scale())
     cruise_should_stop = should_stop(v_ego, self.a_cruise)
 
     candidates = [(output_a_target_mpc, self.mpc.source, output_should_stop_mpc),

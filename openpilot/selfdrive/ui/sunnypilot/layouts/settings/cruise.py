@@ -36,6 +36,9 @@ TRAFFIC_MODE_DESCRIPTION = tr_noop("Shorter gap for stop-and-go traffic: about 0
                                    "rising to 1.0 s from about 11 mph and staying at 1.0 s at every speed until turned off " +
                                    "(Aggressive is 1.25 s). Ignores Following Distance Offset while on. Hold the left thumb " +
                                    "button on the steering wheel for 1 second to toggle. Stays on or off until you change it.")
+CURVE_SPEED_CONTROL_DESCRIPTION = tr_noop("Slow down ahead of curves and power smoothly through them. Also slows and eases off the " +
+                                          "gas when cornering nears what the steering can hold. Uses the vision path; no map data " +
+                                          "required.")
 
 
 def _following_time_offset_label(value: int) -> str:
@@ -69,6 +72,14 @@ class CruiseLayout(Widget):
       title=tr("Smart Cruise Control - Map"),
       description=tr("Use map data to estimate the appropriate speed to drive through turns ahead."),
       param="SmartCruiseControlMap")
+
+    # hidden, and not tied to the param, on a prebuilt whose params library does not know the setting yet
+    self._curve_speed_known = b"CurveSpeedControl" in ui_state.params.all_keys()
+    self.curve_speed_toggle = toggle_item_sp(
+      title=tr("Curve Speed Control"),
+      description=tr(CURVE_SPEED_CONTROL_DESCRIPTION),
+      param="CurveSpeedControl" if self._curve_speed_known else None)
+    self.curve_speed_toggle.set_visible(self._curve_speed_known)
 
     self.custom_acc_toggle = toggle_item_sp(
       title=tr("Custom ACC Speed Increments"),
@@ -122,6 +133,7 @@ class CruiseLayout(Widget):
       self.dec_toggle,
       self.scc_v_toggle,
       self.scc_m_toggle,
+      self.curve_speed_toggle,
       self.custom_acc_toggle,
       self.custom_acc_short_increment,
       self.custom_acc_long_increment,
@@ -179,6 +191,9 @@ class CruiseLayout(Widget):
         self.dec_toggle.action_item.set_enabled(has_long)
         self.scc_v_toggle.action_item.set_enabled(True)
         self.scc_m_toggle.action_item.set_enabled(True)
+        # Curve Speed Control only feeds the longitudinal planner, so it only does anything with openpilot longitudinal
+        # active: gated like the DEC toggle (and like the comma four toggle, which is hidden without it)
+        self.curve_speed_toggle.action_item.set_enabled(has_long)
         self.following_time_offset.action_item.set_enabled(has_long and ui_state.is_offroad())
         self.traffic_mode_toggle.action_item.set_enabled(has_long)
       else:
@@ -186,10 +201,13 @@ class CruiseLayout(Widget):
         ui_state.params.remove("DynamicExperimentalControl")
         ui_state.params.remove("SmartCruiseControlVision")
         ui_state.params.remove("SmartCruiseControlMap")
+        if self._curve_speed_known:
+          ui_state.params.remove("CurveSpeedControl")
         self.custom_acc_toggle.action_item.set_enabled(False)
         self.dec_toggle.action_item.set_enabled(False)
         self.scc_v_toggle.action_item.set_enabled(False)
         self.scc_m_toggle.action_item.set_enabled(False)
+        self.curve_speed_toggle.action_item.set_enabled(False)
         self.following_time_offset.action_item.set_enabled(False)
         self.traffic_mode_toggle.action_item.set_enabled(False)
 
