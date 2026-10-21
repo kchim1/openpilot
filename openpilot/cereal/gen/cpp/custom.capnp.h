@@ -131,6 +131,16 @@ CAPNP_DECLARE_ENUM(DynamicExperimentalControlState, d8f6f2a7a0704037);
 CAPNP_DECLARE_SCHEMA(c18d99475c5c17a3);
 CAPNP_DECLARE_SCHEMA(da72fb762a1047ee);
 CAPNP_DECLARE_SCHEMA(c0dddb0f62704ef6);
+CAPNP_DECLARE_SCHEMA(c5ab7abbfd86c20c);
+CAPNP_DECLARE_SCHEMA(b0ae31b835e15063);
+enum class CurveState_b0ae31b835e15063: uint16_t {
+  DISABLED,
+  CRUISE,
+  SLOWING,
+  CURVE,
+  GOVERNING,
+};
+CAPNP_DECLARE_ENUM(CurveState, b0ae31b835e15063);
 CAPNP_DECLARE_SCHEMA(da2c7f6d86b70216);
 enum class VisionState_da2c7f6d86b70216: uint16_t {
   DISABLED,
@@ -175,6 +185,7 @@ enum class LongitudinalPlanSource_ad47440556d96ec4: uint16_t {
   SCC_VISION,
   SCC_MAP,
   SPEED_LIMIT_ASSIST,
+  CURVE_SPEED,
 };
 CAPNP_DECLARE_ENUM(LongitudinalPlanSource, ad47440556d96ec4);
 CAPNP_DECLARE_SCHEMA(a567bce822ae28fe);
@@ -515,13 +526,16 @@ struct LongitudinalPlanSP::SmartCruiseControl {
   class Pipeline;
   struct Vision;
   struct Map;
+  struct Curve;
+  typedef ::capnp::schemas::CurveState_b0ae31b835e15063 CurveState;
+
   typedef ::capnp::schemas::VisionState_da2c7f6d86b70216 VisionState;
 
   typedef ::capnp::schemas::MapState_d5b11212024bdeb7 MapState;
 
 
   struct _capnpPrivate {
-    CAPNP_DECLARE_STRUCT_HEADER(c18d99475c5c17a3, 0, 2)
+    CAPNP_DECLARE_STRUCT_HEADER(c18d99475c5c17a3, 0, 3)
     #if !CAPNP_LITE
     static constexpr ::capnp::_::RawBrandedSchema const* brand() { return &schema->defaultBrand; }
     #endif  // !CAPNP_LITE
@@ -552,6 +566,21 @@ struct LongitudinalPlanSP::SmartCruiseControl::Map {
 
   struct _capnpPrivate {
     CAPNP_DECLARE_STRUCT_HEADER(c0dddb0f62704ef6, 2, 0)
+    #if !CAPNP_LITE
+    static constexpr ::capnp::_::RawBrandedSchema const* brand() { return &schema->defaultBrand; }
+    #endif  // !CAPNP_LITE
+  };
+};
+
+struct LongitudinalPlanSP::SmartCruiseControl::Curve {
+  Curve() = delete;
+
+  class Reader;
+  class Builder;
+  class Pipeline;
+
+  struct _capnpPrivate {
+    CAPNP_DECLARE_STRUCT_HEADER(c5ab7abbfd86c20c, 3, 0)
     #if !CAPNP_LITE
     static constexpr ::capnp::_::RawBrandedSchema const* brand() { return &schema->defaultBrand; }
     #endif  // !CAPNP_LITE
@@ -2541,6 +2570,9 @@ public:
   inline bool hasMap() const;
   inline  ::cereal::LongitudinalPlanSP::SmartCruiseControl::Map::Reader getMap() const;
 
+  inline bool hasCurve() const;
+  inline  ::cereal::LongitudinalPlanSP::SmartCruiseControl::Curve::Reader getCurve() const;
+
 private:
   ::capnp::_::StructReader _reader;
   template <typename, ::capnp::Kind>
@@ -2583,6 +2615,13 @@ public:
   inline void adoptMap(::capnp::Orphan< ::cereal::LongitudinalPlanSP::SmartCruiseControl::Map>&& value);
   inline ::capnp::Orphan< ::cereal::LongitudinalPlanSP::SmartCruiseControl::Map> disownMap();
 
+  inline bool hasCurve();
+  inline  ::cereal::LongitudinalPlanSP::SmartCruiseControl::Curve::Builder getCurve();
+  inline void setCurve( ::cereal::LongitudinalPlanSP::SmartCruiseControl::Curve::Reader value);
+  inline  ::cereal::LongitudinalPlanSP::SmartCruiseControl::Curve::Builder initCurve();
+  inline void adoptCurve(::capnp::Orphan< ::cereal::LongitudinalPlanSP::SmartCruiseControl::Curve>&& value);
+  inline ::capnp::Orphan< ::cereal::LongitudinalPlanSP::SmartCruiseControl::Curve> disownCurve();
+
 private:
   ::capnp::_::StructBuilder _builder;
   template <typename, ::capnp::Kind>
@@ -2603,6 +2642,7 @@ public:
 
   inline  ::cereal::LongitudinalPlanSP::SmartCruiseControl::Vision::Pipeline getVision();
   inline  ::cereal::LongitudinalPlanSP::SmartCruiseControl::Map::Pipeline getMap();
+  inline  ::cereal::LongitudinalPlanSP::SmartCruiseControl::Curve::Pipeline getCurve();
 private:
   ::capnp::AnyPointer::Pipeline _typeless;
   friend class ::capnp::PipelineHook;
@@ -2800,6 +2840,117 @@ private:
 class LongitudinalPlanSP::SmartCruiseControl::Map::Pipeline {
 public:
   typedef Map Pipelines;
+
+  inline Pipeline(decltype(nullptr)): _typeless(nullptr) {}
+  inline explicit Pipeline(::capnp::AnyPointer::Pipeline&& typeless)
+      : _typeless(kj::mv(typeless)) {}
+
+private:
+  ::capnp::AnyPointer::Pipeline _typeless;
+  friend class ::capnp::PipelineHook;
+  template <typename, ::capnp::Kind>
+  friend struct ::capnp::ToDynamic_;
+};
+#endif  // !CAPNP_LITE
+
+class LongitudinalPlanSP::SmartCruiseControl::Curve::Reader {
+public:
+  typedef Curve Reads;
+
+  Reader() = default;
+  inline explicit Reader(::capnp::_::StructReader base): _reader(base) {}
+
+  inline ::capnp::MessageSize totalSize() const {
+    return _reader.totalSize().asPublic();
+  }
+
+#if !CAPNP_LITE
+  inline ::kj::StringTree toString() const {
+    return ::capnp::_::structString(_reader, *_capnpPrivate::brand());
+  }
+#endif  // !CAPNP_LITE
+
+  inline  ::cereal::LongitudinalPlanSP::SmartCruiseControl::CurveState getState() const;
+
+  inline float getVTarget() const;
+
+  inline float getATarget() const;
+
+  inline float getLatAccelTarget() const;
+
+  inline float getLatAccelMeasured() const;
+
+  inline bool getGovernorActive() const;
+
+  inline bool getEnabled() const;
+
+  inline bool getActive() const;
+
+private:
+  ::capnp::_::StructReader _reader;
+  template <typename, ::capnp::Kind>
+  friend struct ::capnp::ToDynamic_;
+  template <typename, ::capnp::Kind>
+  friend struct ::capnp::_::PointerHelpers;
+  template <typename, ::capnp::Kind>
+  friend struct ::capnp::List;
+  friend class ::capnp::MessageBuilder;
+  friend class ::capnp::Orphanage;
+};
+
+class LongitudinalPlanSP::SmartCruiseControl::Curve::Builder {
+public:
+  typedef Curve Builds;
+
+  Builder() = delete;  // Deleted to discourage incorrect usage.
+                       // You can explicitly initialize to nullptr instead.
+  inline Builder(decltype(nullptr)) {}
+  inline explicit Builder(::capnp::_::StructBuilder base): _builder(base) {}
+  inline operator Reader() const { return Reader(_builder.asReader()); }
+  inline Reader asReader() const { return *this; }
+
+  inline ::capnp::MessageSize totalSize() const { return asReader().totalSize(); }
+#if !CAPNP_LITE
+  inline ::kj::StringTree toString() const { return asReader().toString(); }
+#endif  // !CAPNP_LITE
+
+  inline  ::cereal::LongitudinalPlanSP::SmartCruiseControl::CurveState getState();
+  inline void setState( ::cereal::LongitudinalPlanSP::SmartCruiseControl::CurveState value);
+
+  inline float getVTarget();
+  inline void setVTarget(float value);
+
+  inline float getATarget();
+  inline void setATarget(float value);
+
+  inline float getLatAccelTarget();
+  inline void setLatAccelTarget(float value);
+
+  inline float getLatAccelMeasured();
+  inline void setLatAccelMeasured(float value);
+
+  inline bool getGovernorActive();
+  inline void setGovernorActive(bool value);
+
+  inline bool getEnabled();
+  inline void setEnabled(bool value);
+
+  inline bool getActive();
+  inline void setActive(bool value);
+
+private:
+  ::capnp::_::StructBuilder _builder;
+  template <typename, ::capnp::Kind>
+  friend struct ::capnp::ToDynamic_;
+  friend class ::capnp::Orphanage;
+  template <typename, ::capnp::Kind>
+  friend struct ::capnp::_::PointerHelpers;
+};
+
+#if !CAPNP_LITE
+class LongitudinalPlanSP::SmartCruiseControl::Curve::Pipeline {
+public:
+  typedef Curve Pipelines;
 
   inline Pipeline(decltype(nullptr)): _typeless(nullptr) {}
   inline explicit Pipeline(::capnp::AnyPointer::Pipeline&& typeless)
@@ -7163,6 +7314,45 @@ inline ::capnp::Orphan< ::cereal::LongitudinalPlanSP::SmartCruiseControl::Map> L
       ::capnp::bounded<1>() * ::capnp::POINTERS));
 }
 
+inline bool LongitudinalPlanSP::SmartCruiseControl::Reader::hasCurve() const {
+  return !_reader.getPointerField(
+      ::capnp::bounded<2>() * ::capnp::POINTERS).isNull();
+}
+inline bool LongitudinalPlanSP::SmartCruiseControl::Builder::hasCurve() {
+  return !_builder.getPointerField(
+      ::capnp::bounded<2>() * ::capnp::POINTERS).isNull();
+}
+inline  ::cereal::LongitudinalPlanSP::SmartCruiseControl::Curve::Reader LongitudinalPlanSP::SmartCruiseControl::Reader::getCurve() const {
+  return ::capnp::_::PointerHelpers< ::cereal::LongitudinalPlanSP::SmartCruiseControl::Curve>::get(_reader.getPointerField(
+      ::capnp::bounded<2>() * ::capnp::POINTERS));
+}
+inline  ::cereal::LongitudinalPlanSP::SmartCruiseControl::Curve::Builder LongitudinalPlanSP::SmartCruiseControl::Builder::getCurve() {
+  return ::capnp::_::PointerHelpers< ::cereal::LongitudinalPlanSP::SmartCruiseControl::Curve>::get(_builder.getPointerField(
+      ::capnp::bounded<2>() * ::capnp::POINTERS));
+}
+#if !CAPNP_LITE
+inline  ::cereal::LongitudinalPlanSP::SmartCruiseControl::Curve::Pipeline LongitudinalPlanSP::SmartCruiseControl::Pipeline::getCurve() {
+  return  ::cereal::LongitudinalPlanSP::SmartCruiseControl::Curve::Pipeline(_typeless.getPointerField(2));
+}
+#endif  // !CAPNP_LITE
+inline void LongitudinalPlanSP::SmartCruiseControl::Builder::setCurve( ::cereal::LongitudinalPlanSP::SmartCruiseControl::Curve::Reader value) {
+  ::capnp::_::PointerHelpers< ::cereal::LongitudinalPlanSP::SmartCruiseControl::Curve>::set(_builder.getPointerField(
+      ::capnp::bounded<2>() * ::capnp::POINTERS), value);
+}
+inline  ::cereal::LongitudinalPlanSP::SmartCruiseControl::Curve::Builder LongitudinalPlanSP::SmartCruiseControl::Builder::initCurve() {
+  return ::capnp::_::PointerHelpers< ::cereal::LongitudinalPlanSP::SmartCruiseControl::Curve>::init(_builder.getPointerField(
+      ::capnp::bounded<2>() * ::capnp::POINTERS));
+}
+inline void LongitudinalPlanSP::SmartCruiseControl::Builder::adoptCurve(
+    ::capnp::Orphan< ::cereal::LongitudinalPlanSP::SmartCruiseControl::Curve>&& value) {
+  ::capnp::_::PointerHelpers< ::cereal::LongitudinalPlanSP::SmartCruiseControl::Curve>::adopt(_builder.getPointerField(
+      ::capnp::bounded<2>() * ::capnp::POINTERS), kj::mv(value));
+}
+inline ::capnp::Orphan< ::cereal::LongitudinalPlanSP::SmartCruiseControl::Curve> LongitudinalPlanSP::SmartCruiseControl::Builder::disownCurve() {
+  return ::capnp::_::PointerHelpers< ::cereal::LongitudinalPlanSP::SmartCruiseControl::Curve>::disown(_builder.getPointerField(
+      ::capnp::bounded<2>() * ::capnp::POINTERS));
+}
+
 inline  ::cereal::LongitudinalPlanSP::SmartCruiseControl::VisionState LongitudinalPlanSP::SmartCruiseControl::Vision::Reader::getState() const {
   return _reader.getDataField< ::cereal::LongitudinalPlanSP::SmartCruiseControl::VisionState>(
       ::capnp::bounded<0>() * ::capnp::ELEMENTS);
@@ -7329,6 +7519,118 @@ inline bool LongitudinalPlanSP::SmartCruiseControl::Map::Builder::getActive() {
 inline void LongitudinalPlanSP::SmartCruiseControl::Map::Builder::setActive(bool value) {
   _builder.setDataField<bool>(
       ::capnp::bounded<17>() * ::capnp::ELEMENTS, value);
+}
+
+inline  ::cereal::LongitudinalPlanSP::SmartCruiseControl::CurveState LongitudinalPlanSP::SmartCruiseControl::Curve::Reader::getState() const {
+  return _reader.getDataField< ::cereal::LongitudinalPlanSP::SmartCruiseControl::CurveState>(
+      ::capnp::bounded<0>() * ::capnp::ELEMENTS);
+}
+
+inline  ::cereal::LongitudinalPlanSP::SmartCruiseControl::CurveState LongitudinalPlanSP::SmartCruiseControl::Curve::Builder::getState() {
+  return _builder.getDataField< ::cereal::LongitudinalPlanSP::SmartCruiseControl::CurveState>(
+      ::capnp::bounded<0>() * ::capnp::ELEMENTS);
+}
+inline void LongitudinalPlanSP::SmartCruiseControl::Curve::Builder::setState( ::cereal::LongitudinalPlanSP::SmartCruiseControl::CurveState value) {
+  _builder.setDataField< ::cereal::LongitudinalPlanSP::SmartCruiseControl::CurveState>(
+      ::capnp::bounded<0>() * ::capnp::ELEMENTS, value);
+}
+
+inline float LongitudinalPlanSP::SmartCruiseControl::Curve::Reader::getVTarget() const {
+  return _reader.getDataField<float>(
+      ::capnp::bounded<1>() * ::capnp::ELEMENTS);
+}
+
+inline float LongitudinalPlanSP::SmartCruiseControl::Curve::Builder::getVTarget() {
+  return _builder.getDataField<float>(
+      ::capnp::bounded<1>() * ::capnp::ELEMENTS);
+}
+inline void LongitudinalPlanSP::SmartCruiseControl::Curve::Builder::setVTarget(float value) {
+  _builder.setDataField<float>(
+      ::capnp::bounded<1>() * ::capnp::ELEMENTS, value);
+}
+
+inline float LongitudinalPlanSP::SmartCruiseControl::Curve::Reader::getATarget() const {
+  return _reader.getDataField<float>(
+      ::capnp::bounded<2>() * ::capnp::ELEMENTS);
+}
+
+inline float LongitudinalPlanSP::SmartCruiseControl::Curve::Builder::getATarget() {
+  return _builder.getDataField<float>(
+      ::capnp::bounded<2>() * ::capnp::ELEMENTS);
+}
+inline void LongitudinalPlanSP::SmartCruiseControl::Curve::Builder::setATarget(float value) {
+  _builder.setDataField<float>(
+      ::capnp::bounded<2>() * ::capnp::ELEMENTS, value);
+}
+
+inline float LongitudinalPlanSP::SmartCruiseControl::Curve::Reader::getLatAccelTarget() const {
+  return _reader.getDataField<float>(
+      ::capnp::bounded<3>() * ::capnp::ELEMENTS);
+}
+
+inline float LongitudinalPlanSP::SmartCruiseControl::Curve::Builder::getLatAccelTarget() {
+  return _builder.getDataField<float>(
+      ::capnp::bounded<3>() * ::capnp::ELEMENTS);
+}
+inline void LongitudinalPlanSP::SmartCruiseControl::Curve::Builder::setLatAccelTarget(float value) {
+  _builder.setDataField<float>(
+      ::capnp::bounded<3>() * ::capnp::ELEMENTS, value);
+}
+
+inline float LongitudinalPlanSP::SmartCruiseControl::Curve::Reader::getLatAccelMeasured() const {
+  return _reader.getDataField<float>(
+      ::capnp::bounded<4>() * ::capnp::ELEMENTS);
+}
+
+inline float LongitudinalPlanSP::SmartCruiseControl::Curve::Builder::getLatAccelMeasured() {
+  return _builder.getDataField<float>(
+      ::capnp::bounded<4>() * ::capnp::ELEMENTS);
+}
+inline void LongitudinalPlanSP::SmartCruiseControl::Curve::Builder::setLatAccelMeasured(float value) {
+  _builder.setDataField<float>(
+      ::capnp::bounded<4>() * ::capnp::ELEMENTS, value);
+}
+
+inline bool LongitudinalPlanSP::SmartCruiseControl::Curve::Reader::getGovernorActive() const {
+  return _reader.getDataField<bool>(
+      ::capnp::bounded<16>() * ::capnp::ELEMENTS);
+}
+
+inline bool LongitudinalPlanSP::SmartCruiseControl::Curve::Builder::getGovernorActive() {
+  return _builder.getDataField<bool>(
+      ::capnp::bounded<16>() * ::capnp::ELEMENTS);
+}
+inline void LongitudinalPlanSP::SmartCruiseControl::Curve::Builder::setGovernorActive(bool value) {
+  _builder.setDataField<bool>(
+      ::capnp::bounded<16>() * ::capnp::ELEMENTS, value);
+}
+
+inline bool LongitudinalPlanSP::SmartCruiseControl::Curve::Reader::getEnabled() const {
+  return _reader.getDataField<bool>(
+      ::capnp::bounded<17>() * ::capnp::ELEMENTS);
+}
+
+inline bool LongitudinalPlanSP::SmartCruiseControl::Curve::Builder::getEnabled() {
+  return _builder.getDataField<bool>(
+      ::capnp::bounded<17>() * ::capnp::ELEMENTS);
+}
+inline void LongitudinalPlanSP::SmartCruiseControl::Curve::Builder::setEnabled(bool value) {
+  _builder.setDataField<bool>(
+      ::capnp::bounded<17>() * ::capnp::ELEMENTS, value);
+}
+
+inline bool LongitudinalPlanSP::SmartCruiseControl::Curve::Reader::getActive() const {
+  return _reader.getDataField<bool>(
+      ::capnp::bounded<18>() * ::capnp::ELEMENTS);
+}
+
+inline bool LongitudinalPlanSP::SmartCruiseControl::Curve::Builder::getActive() {
+  return _builder.getDataField<bool>(
+      ::capnp::bounded<18>() * ::capnp::ELEMENTS);
+}
+inline void LongitudinalPlanSP::SmartCruiseControl::Curve::Builder::setActive(bool value) {
+  _builder.setDataField<bool>(
+      ::capnp::bounded<18>() * ::capnp::ELEMENTS, value);
 }
 
 inline bool LongitudinalPlanSP::SpeedLimit::Reader::hasResolver() const {

@@ -358,3 +358,19 @@ sections:
       - type: capability
         field: has_icbm
         equals: true
+  - key: CurveSpeedControl
+    widget: toggle
+    title: Curve
+    description: Slows down ahead of curves and powers smoothly through them. It plans a speed for the road ahead from
+      the driving model's predicted path, no map data needed, for about 2.2 m/s² of cornering, and starts slowing for
+      it early, at 1.0 m/s². The model often sees how sharp a curve is only shortly before it, so a sharp curve can
+      still be entered faster than planned; it lowers the entry speed rather than guaranteeing it. A second check
+      watches how hard the truck is actually cornering, from the steering angle. At 85% of what the steering can hold
+      (2.8 m/s² while steering on torque, 3.0 on angle) it brings the speed down, and from 70% it eases off the gas,
+      with none at all while the steering cannot hold the line. While it is slowing, a green C shows on the comma four
+      road view; on the comma 3/3X a CURVE label shows while it is on and blinks while it is slowing. sunnypilot
+      longitudinal only, and turned off when longitudinal is turned off. Can be changed while driving.
+    visibility:
+    - $ref: '#/macros/longitudinal'
+    enablement:
+    - $ref: '#/macros/longitudinal'

@@ -227,10 +227,15 @@ class UIStateSP:
       self.params.remove("LateralJerkTorqueController")
       self.params.remove("AlphaLongitudinalEnabled")
 
-    # No longitudinal control: no experimental mode or DEC
+    # No longitudinal control: no experimental mode, DEC or Curve Speed Control (it only feeds the longitudinal planner,
+    # and its toggles are shown with openpilot longitudinal only, so with ICBM alone it could not be turned off)
     if not has_long:
       self.params.remove("ExperimentalMode")
       self.params.remove("DynamicExperimentalControl")
+      try:
+        self.params.remove("CurveSpeedControl")
+      except UnknownKeyName:
+        pass  # a prebuilt whose params library does not know the setting yet: nothing to forget
 
     # ICBM: clear if not available or if full longitudinal control is active
     if self.CP_SP is not None:

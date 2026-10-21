@@ -8,7 +8,7 @@ from typing import Any
 
 from opendbc.car import structs
 from opendbc.car.interfaces import CarInterfaceBase
-from openpilot.common.params import Params
+from openpilot.common.params import Params, UnknownKeyName
 from openpilot.common.swaglog import cloudlog
 from openpilot.sunnypilot.selfdrive.controls.lib.nnlc.helpers import get_nn_model_path
 from openpilot.sunnypilot.selfdrive.controls.lib.speed_limit.helpers import set_speed_limit_assist_availability
@@ -85,6 +85,14 @@ def _cleanup_unsupported_params(CP: structs.CarParams, CP_SP: structs.CarParamsS
     params.remove("CustomAccIncrementsEnabled")
     params.remove("SmartCruiseControlVision")
     params.remove("SmartCruiseControlMap")
+
+  if not CP.openpilotLongitudinalControl:
+    # Curve Speed Control only feeds the longitudinal planner, and its toggles are shown with openpilot longitudinal only:
+    # forgotten without it, ICBM or not, so it is never left on where it cannot be turned off
+    try:
+      params.remove("CurveSpeedControl")
+    except UnknownKeyName:
+      pass  # a prebuilt whose params library does not know the setting yet: nothing to forget
 
   set_speed_limit_assist_availability(CP, CP_SP, params)
 

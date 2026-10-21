@@ -183,15 +183,35 @@ class LongitudinalPlannerSP:
     self.sla.update(long_enabled, long_override, v_ego, a_ego, v_cruise_cluster, self.resolver.speed_limit,
                     self.resolver.speed_limit_final_last, has_speed_limit, self.resolver.distance, self.events_sp)
 
+    # Curve Speed Control: the feedforward profile, with the reactive lateral-load governor folded in as a tighter speed
+    # cap (whichever wants the lower speed). Both return V_CRUISE_UNSET when not constraining.
+    curve_v, curve_a = self.scc.curve.output_v_target, self.scc.curve.output_a_target
+    if self.scc.governor.output_v_target < curve_v:
+      curve_v, curve_a = self.scc.governor.output_v_target, min(curve_a, 0.0)
+
     targets = {
       LongitudinalPlanSource.cruise: (v_cruise, a_ego),
       LongitudinalPlanSource.sccVision: (self.scc.vision.output_v_target, self.scc.vision.output_a_target),
       LongitudinalPlanSource.sccMap: (self.scc.map.output_v_target, self.scc.map.output_a_target),
       LongitudinalPlanSource.speedLimitAssist: (self.sla.output_v_target, self.sla.output_a_target),
+      LongitudinalPlanSource.curveSpeed: (curve_v, curve_a),
     }
 
     self.source = min(targets, key=lambda k: targets[k][0])
     self.output_v_target, self.output_a_target = targets[self.source]
+
+    # A source wins on the lowest SPEED target, but the a_target handed back becomes the planner's acceleration state:
+    # it seeds the MPC and is integrated into v_desired_filter (a_ego here is that state from the last frame, not the
+    # measured acceleration). So a source that wins the speed contest while asking to ACCELERATE (SCC-V turning or
+    # leaving a turn, up to +0.5 m/s^2, or curve control under its curve speed, up to +1.2, holding a cap a lead has
+    # braked the truck below) would inject an acceleration the truck is not making: v_desired_filter drifts above the
+    # true speed and the MPC plans braking for a truck going faster than it really is.
+    #
+    # Every source but cruise is a speed CAP: it may only ever ask for less acceleration, never more. Clamping to the
+    # incoming state keeps every cap able to slow the truck (SCC-V's and curve control's own decel still pass through)
+    # while leaving the accelerate-out to the MPC and the cruise accel. Cruise, SCC-M and Speed Limit Assist hand back
+    # a_ego itself, so this is a no-op for them.
+    self.output_a_target = min(self.output_a_target, a_ego)
     return self.output_v_target, self.output_a_target
 
   def update(self, sm: messaging.SubMaster) -> None:
@@ -238,6 +258,16 @@ class LongitudinalPlannerSP:
     sccMap.aTarget = float(self.scc.map.output_a_target)
     sccMap.enabled = self.scc.map.is_enabled
     sccMap.active = self.scc.map.is_active
+    # Curve Speed Control (feedforward profile + reactive lateral-load governor)
+    curve = smartCruiseControl.curve
+    curve.state = self.scc.curve.state
+    curve.vTarget = float(self.scc.curve.output_v_target)
+    curve.aTarget = float(self.scc.curve.output_a_target)
+    curve.latAccelTarget = float(self.scc.curve.lat_accel_target)
+    curve.latAccelMeasured = float(self.scc.governor.load * self.scc.governor.ceiling)
+    curve.governorActive = self.scc.governor.is_active
+    curve.enabled = self.scc.curve.is_enabled
+    curve.active = self.scc.curve.is_active
 
     # Speed Limit
     speedLimit = longitudinalPlanSP.speedLimit
