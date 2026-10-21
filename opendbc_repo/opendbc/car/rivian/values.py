@@ -13,6 +13,9 @@ class WMI(StrEnum):
   RIVIAN_MPV = "7PD"
 
 
+R1S_WHEELBASE = 3.08  # m, 121.1 in
+
+
 class ModelLine(StrEnum):
   R1T = "T"  # R1T 4-door Pickup Truck
   R1S = "S"  # R1S 4-door MPV
@@ -60,11 +63,8 @@ class CAR(Platforms):
     ],
     # NOTE: R1S wheelbase is 121.1in / 3.08m; R1T wheelbase is 135.8-136in / ~3.45m
     # (Rivian support docs: rivian.com/support/article/what-is-the-vehicle-wheelbase-of-the-r1t
-    # and .../what-is-the-vehicle-wheelbase-of-r1s). Both body styles share this CarSpecs; using
-    # the R1T's (longer) number here since that's the vehicle this fork is validated against, and
-    # it's the safe direction to be wrong in for the R1S (VM assumes gentler turns than needed,
-    # not tighter). TODO: split into separate R1T/R1S platform configs using VIN ModelLine so both
-    # get their correct wheelbase instead of sharing one.
+    # and .../what-is-the-vehicle-wheelbase-of-r1s). Both body styles share this CarSpecs (the R1T's);
+    # the interface sets the R1S wheelbase from the VIN's model line (R1S_WHEELBASE).
     CarSpecs(mass=3206., wheelbase=3.45, steerRatio=15.2),
     wmis={WMI.RIVIAN_TRUCK, WMI.RIVIAN_MPV},
     lines={ModelLine.R1T, ModelLine.R1S},

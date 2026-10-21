@@ -43,17 +43,7 @@ class Controls(ControlsExt):
     self.CP = messaging.log_from_bytes(self.params.get("CarParams", block=True), car.CarParams)
     cloudlog.info("controlsd got CarParams")
 
-    # R1S/R1T share one CarSpecs entry upstream (see wheelbase-offtracking-plan.md) -- no
-    # reliable fingerprint signal yet to tell them apart, so let the user pick. This only
-    # patches this process's own CP/VM (the live control loop and our own off-tracking
-    # compensation, which reads CP.wheelbase every frame); ExternalController's separate
-    # safety-envelope VM is a static lookup and is intentionally NOT affected by this.
-    if self.CP.brand == 'rivian' and self.params.get_bool("RivianR1SWheelbase"):
-      R1S_WHEELBASE = 3.08  # meters; R1T (default) is CarSpecs.wheelbase, currently 3.45
-      cp_builder = self.CP.as_builder()
-      cp_builder.centerToFront *= R1S_WHEELBASE / cp_builder.wheelbase
-      cp_builder.wheelbase = R1S_WHEELBASE
-      self.CP = cp_builder.as_reader()
+    # R1S/R1T: the wheelbase comes from the VIN in CarParams (opendbc rivian interface), for every process alike
 
     # Initialize sunnypilot controlsd extension and base model state
     ControlsExt.__init__(self, self.CP, self.params)

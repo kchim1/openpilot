@@ -3,6 +3,7 @@ import numpy as np
 
 from openpilot.common.test import OpenpilotTestCase
 from openpilot.cereal import messaging
+from opendbc.car.structs import car
 from openpilot.selfdrive.locationd.paramsd import retrieve_initial_vehicle_params
 from openpilot.selfdrive.locationd.models.car_kf import CarKalman
 from openpilot.selfdrive.locationd.test.test_locationd_scenarios import TEST_ROUTE
@@ -37,3 +38,19 @@ class TestParamsd(OpenpilotTestCase):
     np.testing.assert_allclose(offset, msg.vehicleParameters.angleOffsetAverageDeg)
     np.testing.assert_equal(p_init.shape, CarKalman.P_initial.shape)
     np.testing.assert_allclose(np.diagonal(p_init), msg.vehicleParameters.debugFilterState.std)
+
+  def test_wheelbase_change_keeps_angle_per_curvature(self):
+    # the same car with a new wheelbase (a Rivian R1S now set from the VIN): the learned steer ratio x wheelbase is kept
+    params = Params()
+    last_CP = car.CarParams.new_message(carFingerprint="RIVIAN_R1", steerRatio=15.2, wheelbase=3.45)
+    CP = car.CarParams.new_message(carFingerprint="RIVIAN_R1", steerRatio=15.2, wheelbase=3.08)
+    msg = messaging.new_message("vehicleParameters")
+    msg.vehicleParameters.steerRatio = 13.88
+    params.put("LiveParametersV2", msg.to_bytes(), block=True)
+    params.put("CarParamsPrevRoute", last_CP.to_bytes(), block=True)
+    sr, _, _, _ = retrieve_initial_vehicle_params(params, CP, replay=True, debug=False)
+    np.testing.assert_allclose(sr * CP.wheelbase, 13.88 * last_CP.wheelbase, rtol=1e-6)
+    # an unchanged wheelbase restores the ratio as is
+    params.put("CarParamsPrevRoute", CP.to_bytes(), block=True)
+    sr, _, _, _ = retrieve_initial_vehicle_params(params, CP, replay=True, debug=False)
+    np.testing.assert_allclose(sr, 13.88, rtol=1e-6)

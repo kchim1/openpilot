@@ -2354,17 +2354,6 @@
       "description": "",
       "items": [
         {
-          "key": "RivianR1SWheelbase",
-          "widget": "toggle",
-          "title": "I Drive an R1S (not R1T)",
-          "description": "R1S and R1T share one wheelbase value today since there's no reliable way yet to tell them apart automatically. This defaults to the R1T's wheelbase (3.45m). Turn this on if you actually drive an R1S (3.08m) so steering calculations use the correct value. Off-road only; takes effect on your next drive.",
-          "enablement": [
-            {
-              "type": "offroad_only"
-            }
-          ]
-        },
-        {
           "key": "RivianOfftrackCompensationEnabled",
           "widget": "toggle",
           "title": "Rear-Axle Off-Tracking Compensation (R1T)",
