@@ -26,6 +26,7 @@ from openpilot.selfdrive.locationd.helpers import PoseCalibrator, Pose
 
 from openpilot.sunnypilot.selfdrive.controls.controlsd_ext import ControlsExt
 from openpilot.sunnypilot.selfdrive.controls.lib.rivian_offtrack_ext import RivianOfftrackCompensation
+from openpilot.sunnypilot.selfdrive.controls.lib.sharp_turn_steering import SharpTurnSteering
 from openpilot.sunnypilot.selfdrive.controls.lib.launch_assist import LaunchAssist
 
 State = log.SelfdriveState.OpenpilotState
@@ -42,17 +43,7 @@ class Controls(ControlsExt):
     self.CP = messaging.log_from_bytes(self.params.get("CarParams", block=True), car.CarParams)
     cloudlog.info("controlsd got CarParams")
 
-    # R1S/R1T share one CarSpecs entry upstream (see wheelbase-offtracking-plan.md) -- no
-    # reliable fingerprint signal yet to tell them apart, so let the user pick. This only
-    # patches this process's own CP/VM (the live control loop and our own off-tracking
-    # compensation, which reads CP.wheelbase every frame); ExternalController's separate
-    # safety-envelope VM is a static lookup and is intentionally NOT affected by this.
-    if self.CP.brand == 'rivian' and self.params.get_bool("RivianR1SWheelbase"):
-      R1S_WHEELBASE = 3.08  # meters; R1T (default) is CarSpecs.wheelbase, currently 3.45
-      cp_builder = self.CP.as_builder()
-      cp_builder.centerToFront *= R1S_WHEELBASE / cp_builder.wheelbase
-      cp_builder.wheelbase = R1S_WHEELBASE
-      self.CP = cp_builder.as_reader()
+    # R1S/R1T: the wheelbase comes from the VIN in CarParams (opendbc rivian interface), for every process alike
 
     # Initialize sunnypilot controlsd extension and base model state
     ControlsExt.__init__(self, self.CP, self.params)
@@ -100,6 +91,8 @@ class Controls(ControlsExt):
 
     # Rear-axle off-tracking compensation, R1T-specific (see wheelbase-offtracking-plan.md)
     self.rivian_offtrack = RivianOfftrackCompensation(self.params) if self.CP.brand == 'rivian' else None
+    # Sharp Turn Steering: more of the model's curvature in tight low-speed turns (Rivian, the default driving model)
+    self.sharp_turn = SharpTurnSteering(self.params) if self.CP.brand == 'rivian' else None
     # Rivian Launch Assist (RivianLaunchAssist toggle, sunnypilot longitudinal only)
     self.launch_assist = LaunchAssist(self.params) if LaunchAssist.available(self.CP) else None
 
@@ -179,6 +172,8 @@ class Controls(ControlsExt):
       new_desired_curvature = self.sm['lateralManeuverPlan'].desiredCurvature if CC.latActive else self.curvature
     else:
       new_desired_curvature = model_v2.action.desiredCurvature if CC.latActive else self.curvature
+    if self.sharp_turn is not None and CC.latActive and not self.sm.valid['lateralManeuverPlan']:
+      new_desired_curvature = self.sharp_turn.apply(new_desired_curvature, CS.vEgo, model_v2)
     if self.rivian_offtrack is not None and CC.latActive:
       new_desired_curvature = self.rivian_offtrack.apply(new_desired_curvature, self.CP.wheelbase)
     self.desired_curvature, curvature_limited = clip_curvature(CS.vEgo, self.desired_curvature, new_desired_curvature, lp.roll)

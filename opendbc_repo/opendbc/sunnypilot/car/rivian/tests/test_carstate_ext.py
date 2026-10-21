@@ -19,7 +19,8 @@ def button_events(ret):
 
 
 class TestSetSpeedButtons(unittest.TestCase):
-  """Right thumb control with the longitudinal harness upgrade: left button = set speed down, right button = set speed up."""
+  """Right thumb control with the longitudinal harness upgrade: left = set speed down, right = set speed up, middle (the
+  scroll wheel pressed in) held 1 s = Traffic Mode toggle."""
 
   def setUp(self):
     self.cs = self._make()
@@ -33,8 +34,10 @@ class TestSetSpeedButtons(unittest.TestCase):
     cs.set_speed = SET_SPEED_MPH * CV.MPH_TO_MS
     return cs
 
-  def _frame(self, decrease=False, increase=False, metric=False, cruise_enabled=True):
-    wheel = {"RightButton_LeftClick": 2 if decrease else 0, "RightButton_RightClick": 2 if increase else 0, "RightButton_Scroll": self.scroll}
+  def _frame(self, decrease=False, increase=False, middle=False, metric=False, cruise_enabled=True):
+    # buttons read 1 at rest and 2 while pressed (routes 0000001d/1e)
+    wheel = {"RightButton_LeftClick": 2 if decrease else 1, "RightButton_RightClick": 2 if increase else 1,
+             "RightButton_ScrollClick": 2 if middle else 1, "RightButton_Scroll": self.scroll}
     can_parsers = {
       Bus.alt: SimpleNamespace(vl={"WheelButtons_Fwd": wheel}),
       Bus.adas: SimpleNamespace(vl={"Cluster": {"Cluster_Unit": 0 if metric else 1}}),
@@ -45,78 +48,59 @@ class TestSetSpeedButtons(unittest.TestCase):
     self.cs.update(ret, can_parsers)
     return ret
 
-  def _hold(self, frames, **kwargs):
+  def _hold_middle(self, frames, **kwargs):
     events = []
     for _ in range(frames):
-      ret = self._frame(decrease=True, **kwargs)
+      ret = self._frame(middle=True, **kwargs)
       events += button_events(ret)
-      self.assertAlmostEqual(ret.cruiseState.speed, SET_SPEED_MPH * CV.MPH_TO_MS, places=5)  # never changes while held
+      if kwargs.get("cruise_enabled", True):
+        self.assertAlmostEqual(ret.cruiseState.speed, SET_SPEED_MPH * CV.MPH_TO_MS, places=5)  # never changes the set speed
     return events
 
   def _set_speed_mph(self):
     return self.cs.set_speed * CV.MS_TO_MPH
 
-  def test_tap_lowers_set_speed_on_release(self):
+  def test_middle_hold_one_second_toggles_once(self):
+    self.assertEqual(self._hold_middle(TRAFFIC_MODE_HOLD_FRAMES - 1), [])
+    # the toggle goes out on the frame the hold reaches 1 s, while the button is still down
+    self.assertEqual(button_events(self._frame(middle=True)), [TOGGLE])
+    self.assertEqual(button_events(self._frame()), [])
+    self.assertAlmostEqual(self._set_speed_mph(), SET_SPEED_MPH)
+
+  def test_middle_short_press_does_nothing(self):
     for frames in (1, 5, TRAFFIC_MODE_HOLD_FRAMES - 1):
       with self.subTest(frames=frames):
         self.setUp()
-        self.assertEqual(self._hold(frames), [])
+        self.assertEqual(self._hold_middle(frames), [])
         self.assertEqual(button_events(self._frame()), [])
-        self.assertAlmostEqual(self._set_speed_mph(), SET_SPEED_MPH - 1)
+        self.assertAlmostEqual(self._set_speed_mph(), SET_SPEED_MPH)
 
-  def test_tap_metric_lowers_by_one_kph(self):
-    self._hold(3, metric=True)
+  def test_middle_long_hold_does_not_repeat(self):
+    self.assertEqual(self._hold_middle(10 * TRAFFIC_MODE_HOLD_FRAMES), [TOGGLE])
+    self.assertEqual(button_events(self._frame()), [])
+    # a second hold toggles again
+    self.assertEqual(self._hold_middle(TRAFFIC_MODE_HOLD_FRAMES), [TOGGLE])
+
+  def test_middle_toggle_while_cruise_off(self):
+    self.assertEqual(self._hold_middle(TRAFFIC_MODE_HOLD_FRAMES, cruise_enabled=False), [TOGGLE])
+
+  def test_decrease_button_steps_down_again(self):
+    # -1 on press, then each 66 frames held drops to the next multiple of 5 below; holding it never toggles Traffic Mode
+    expected = {1: 49, 65: 49, 66: 45, 131: 45, 132: 40}
+    for frame in range(1, 3 * TRAFFIC_MODE_HOLD_FRAMES):
+      self.assertEqual(button_events(self._frame(decrease=True)), [])
+      if frame in expected:
+        self.assertAlmostEqual(self._set_speed_mph(), expected[frame], msg=f"{frame=}")
+    self.assertEqual(button_events(self._frame()), [])
+
+  def test_decrease_tap_metric_lowers_by_one_kph(self):
+    self._frame(decrease=True, metric=True)
     self._frame(metric=True)
     self.assertAlmostEqual(self.cs.set_speed, SET_SPEED_MPH * CV.MPH_TO_MS - CV.KPH_TO_MS)
 
-  def test_hold_one_second_toggles_once(self):
-    events = self._hold(TRAFFIC_MODE_HOLD_FRAMES - 1)
-    self.assertEqual(events, [])
-    # the toggle goes out on the frame the hold reaches 1 s, while the button is still down
-    self.assertEqual(button_events(self._frame(decrease=True)), [TOGGLE])
-    self.assertEqual(button_events(self._frame()), [])
-    self.assertAlmostEqual(self._set_speed_mph(), SET_SPEED_MPH)
-
-  def test_long_hold_does_not_repeat(self):
-    self.assertEqual(self._hold(10 * TRAFFIC_MODE_HOLD_FRAMES), [TOGGLE])
-    # no 5 mph long press steps, and the release does nothing
-    self.assertEqual(button_events(self._frame()), [])
-    self.assertAlmostEqual(self._set_speed_mph(), SET_SPEED_MPH)
-
-  def test_toggle_while_cruise_off(self):
-    # set speed follows vEgoCluster as before; the toggle still works
-    events = []
-    for _ in range(TRAFFIC_MODE_HOLD_FRAMES):
-      ret = self._frame(decrease=True, cruise_enabled=False)
-      events += button_events(ret)
-      self.assertAlmostEqual(ret.cruiseState.speed, 20., places=5)
-    self.assertEqual(events, [TOGGLE])
-
-  def test_press_started_with_cruise_off_leaves_set_speed(self):
-    # pressed with cruise off (set speed follows vEgoCluster), cruise engaged while the button is still down, then
-    # released: cruise keeps the set speed it was engaged at
-    for frames_off, frames_on in ((1, 1), (30, 20), (5, TRAFFIC_MODE_HOLD_FRAMES - 10)):
-      with self.subTest(frames_off=frames_off, frames_on=frames_on):
-        self.setUp()
-        for _ in range(frames_off):
-          self._frame(decrease=True, cruise_enabled=False)
-        for _ in range(frames_on):
-          self._frame(decrease=True)
-        ret = self._frame()
-        self.assertEqual(button_events(ret), [])
-        self.assertAlmostEqual(ret.cruiseState.speed, 20., places=5)
-        # the next tap with cruise enabled lowers it as usual
-        self._frame(decrease=True)
-        self.assertAlmostEqual(self._frame().cruiseState.speed, 20. - CV.MPH_TO_MS, places=5)
-
-  def test_press_with_cruise_off_in_between_leaves_set_speed(self):
-    # cruise briefly off during the press: the set speed follows vEgoCluster, and the release does not lower it
-    for _ in range(10):
-      self._frame(decrease=True)
-    self._frame(decrease=True, cruise_enabled=False)
-    for _ in range(10):
-      self._frame(decrease=True)
-    self.assertAlmostEqual(self._frame().cruiseState.speed, 20., places=5)
+  def test_decrease_with_cruise_off_follows_speed(self):
+    ret = self._frame(decrease=True, cruise_enabled=False)
+    self.assertAlmostEqual(ret.cruiseState.speed, 20., places=5)
 
   def test_increase_button_unchanged(self):
     # +1 on press, then each 66 frames held jumps up to the next multiple of 5
@@ -128,10 +112,14 @@ class TestSetSpeedButtons(unittest.TestCase):
     self._frame()
     self.assertAlmostEqual(self._set_speed_mph(), 60)
 
-  def test_scroll_and_toggle_in_same_frame(self):
-    self._hold(TRAFFIC_MODE_HOLD_FRAMES - 1)
+  def test_rolling_while_pressed_in_does_not_change_the_distance(self):
+    self._hold_middle(TRAFFIC_MODE_HOLD_FRAMES - 1)
     self.scroll += 1
-    self.assertEqual(button_events(self._frame(decrease=True)), [SCROLL, TOGGLE])
+    self.assertEqual(button_events(self._frame(middle=True)), [TOGGLE])
+    # and the roll is not sent later on release either
+    self.assertEqual(button_events(self._frame()), [])
+    self.scroll += 1
+    self.assertEqual(button_events(self._frame()), [SCROLL])
 
   def test_scroll_alone(self):
     self.scroll += 1
@@ -142,7 +130,7 @@ class TestSetSpeedButtons(unittest.TestCase):
     self.cs = self._make(openpilot_long=False)
     events = []
     for _ in range(2 * TRAFFIC_MODE_HOLD_FRAMES):
-      events += button_events(self._frame(decrease=True))
+      events += button_events(self._frame(middle=True))
     self.assertEqual(events, [])
 
 

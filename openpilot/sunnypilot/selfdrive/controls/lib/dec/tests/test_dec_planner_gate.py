@@ -37,6 +37,10 @@ class MockDec:
   def enabled(self) -> bool:
     return True
 
+  def brake_sooner(self) -> bool:
+    # the lead planner's part of Brake Sooner for Stops off: these tests are about the DEC gate
+    return False
+
 
 class MockSubMaster(dict):
   def __init__(self, services: dict):

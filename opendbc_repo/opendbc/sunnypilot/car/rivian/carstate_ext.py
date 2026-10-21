@@ -20,7 +20,7 @@ ButtonType = structs.CarState.ButtonEvent.Type
 MAX_SET_SPEED = 85 * CV.MPH_TO_MS
 MIN_SET_SPEED = 20 * CV.MPH_TO_MS
 
-# Holding the set speed down button this long toggles Traffic Mode instead of lowering the set speed.
+# Holding the right thumb control's middle button (pressing the scroll wheel in) this long toggles Traffic Mode.
 # carState is updated at 100 Hz (card), so 100 frames is 1.0 s
 TRAFFIC_MODE_HOLD_FRAMES = 100
 
@@ -36,7 +36,8 @@ class CarStateExt:
     self.distance_button = 0
     self.increase_counter = 0
     self.decrease_counter = 0
-    self.decrease_press_enabled = False
+    self.traffic_mode_button = False
+    self.traffic_mode_counter = 0
     self.acc_fault_recorder = AccFaultRecorder()
 
   def update_longitudinal_upgrade(self, ret: structs.CarState, can_parsers: dict[StrEnum, CANParser]) -> None:
@@ -46,15 +47,18 @@ class CarStateExt:
 
     prev_increase_button = self.increase_button
     prev_decrease_button = self.decrease_button
-    prev_decrease_counter = self.decrease_counter
 
     if self.CP.openpilotLongitudinalControl:
       button_events = []
 
-      # distance scroll wheel
+      # the scroll wheel pressed in: the Traffic Mode button below
+      self.traffic_mode_button = cp_park.vl["WheelButtons_Fwd"]["RightButton_ScrollClick"] == 2
+
+      # distance scroll wheel. Not while it is pressed in: pressing it in for Traffic Mode can also roll it a notch,
+      # which would change the driving personality
       right_scroll = cp_park.vl["WheelButtons_Fwd"]["RightButton_Scroll"]
       if right_scroll != 255:
-        if self.distance_button != right_scroll:
+        if self.distance_button != right_scroll and not self.traffic_mode_button:
           button_events.append(structs.CarState.ButtonEvent(pressed=False, type=ButtonType.gapAdjustCruise))
         self.distance_button = right_scroll
 
@@ -76,21 +80,21 @@ class CarStateExt:
         elif not prev_increase_button:
           self.set_speed += conversion
 
-      # set speed down: a tap lowers the set speed by 1 when it is released. Held for TRAFFIC_MODE_HOLD_FRAMES, it sends
-      # one Traffic Mode toggle when the hold is reached and leaves the set speed alone (no long press steps).
-      # Only a press made entirely with cruise enabled lowers it: one that starts with cruise off (set speed following
-      # vEgoCluster) must not lower the set speed cruise was engaged at while the button was held
       if self.decrease_button:
-        if not prev_decrease_button:
-          self.decrease_press_enabled = ret.cruiseState.enabled
-        if self.decrease_counter == TRAFFIC_MODE_HOLD_FRAMES:
-          button_events.append(structs.CarState.ButtonEvent(pressed=False, type=TRAFFIC_MODE_BUTTON))
-      elif prev_decrease_button and prev_decrease_counter < TRAFFIC_MODE_HOLD_FRAMES and self.decrease_press_enabled:
-        self.set_speed -= conversion
+        if self.decrease_counter % 66 == 0:
+          self.set_speed = (int(math.floor((set_speed_converted - 1) / long_press_step)) * long_press_step) * conversion
+        elif not prev_decrease_button:
+          self.set_speed -= conversion
+
+      # Traffic Mode: the middle button (the scroll wheel pressed in) held for TRAFFIC_MODE_HOLD_FRAMES sends one toggle
+      # when the hold is reached. Holding longer, a shorter press and the release do nothing here. The truck still does
+      # whatever it does on that button itself: openpilot only reads it
+      self.traffic_mode_counter = self.traffic_mode_counter + 1 if self.traffic_mode_button else 0
+      if self.traffic_mode_counter == TRAFFIC_MODE_HOLD_FRAMES:
+        button_events.append(structs.CarState.ButtonEvent(pressed=False, type=TRAFFIC_MODE_BUTTON))
 
       if not ret.cruiseState.enabled:
         self.set_speed = ret.vEgoCluster
-        self.decrease_press_enabled = False
 
       # VDM_UserAdasRequest: 0=IDLE, 1=UP_1, 2=UP_2, 3=DOWN_1, 4=DOWN_2
       stalk_down = int(cp.vl["VDM_AdasSts"]["VDM_UserAdasRequest"]) in (3, 4)

@@ -205,6 +205,10 @@ class DynamicExperimentalController:
   def mode(self) -> str:
     return self._mode_manager.get_mode()
 
+  def brake_sooner(self) -> bool:
+    # Brake Sooner for Stops, re-read every second whether or not DEC is on: the lead planner uses it too
+    return self._brake_sooner
+
   def enabled(self) -> bool:
     return self._enabled
 

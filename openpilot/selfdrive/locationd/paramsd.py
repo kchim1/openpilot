@@ -215,9 +215,15 @@ def retrieve_initial_vehicle_params(params: Params, CP: car.CarParams, replay: b
         if last_CP.carFingerprint != CP.carFingerprint:
           raise Exception("Car model mismatch")
 
+        # What is learned is the steering angle per curvature, steer ratio x wheelbase. If the same car's wheelbase
+        # changed (a Rivian R1S now gets its own from the VIN), keep that by rescaling the ratio to the new wheelbase
+        learned_sr = lp.steerRatio
+        if last_CP.wheelbase > 0. and abs(last_CP.wheelbase - CP.wheelbase) > 1e-3:
+          learned_sr = lp.steerRatio * last_CP.wheelbase / CP.wheelbase
+
         # Check if starting values are sane
         min_sr, max_sr = 0.5 * CP.steerRatio, 2.0 * CP.steerRatio
-        steer_ratio_sane = min_sr <= lp.steerRatio <= max_sr
+        steer_ratio_sane = min_sr <= learned_sr <= max_sr
         if not steer_ratio_sane:
           raise Exception(f"Invalid starting values found {lp}")
 
@@ -225,7 +231,7 @@ def retrieve_initial_vehicle_params(params: Params, CP: car.CarParams, replay: b
         if debug and len(initial_filter_std) != 0:
           p_initial = np.diag(initial_filter_std)
 
-        steer_ratio, stiffness_factor, angle_offset_deg = lp.steerRatio, lp.stiffnessFactor, lp.angleOffsetAverageDeg
+        steer_ratio, stiffness_factor, angle_offset_deg = learned_sr, lp.stiffnessFactor, lp.angleOffsetAverageDeg
         retrieve_success = True
     except Exception as e:
       cloudlog.error(f"Failed to retrieve initial values: {e}")

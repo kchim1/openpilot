@@ -61,7 +61,7 @@ class TogglesLayoutMici(NavScroller):
                                                               "About 0.5 s when nearly stopped, 1.0 s from 11 mph.\n" +
                                                               "Stays at 1.0 s at every speed until turned off.\n" +
                                                               "Ignores the following distance offset.\n" +
-                                                              "Hold the left thumb button 1 s to toggle,\n" +
+                                                              "Hold the right scroll wheel in 1 s to toggle,\n" +
                                                               "or tap the T on the home screen when off-road.\n" +
                                                               "Stays on or off until you change it.")
     except UnknownKeyName:

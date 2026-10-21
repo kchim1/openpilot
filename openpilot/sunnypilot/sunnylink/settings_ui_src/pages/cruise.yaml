@@ -33,7 +33,10 @@ sections:
     title: Driving Personality
     description: Standard is recommended. In aggressive mode, sunnypilot will follow lead cars closer and be more aggressive
       with the gas and brake. In relaxed mode sunnypilot will stay further away from lead cars. On supported cars, you can
-      cycle through these personalities with your steering wheel distance button.
+      cycle through these personalities with your steering wheel distance button. Pulling away from a stop, the gas is
+      also limited by personality, up to about 9 mph, easing back to the normal limit by 27 mph. Aggressive is limited to
+      1.4 m/s², Standard 1.2 and Relaxed 1.0. Before this it was 1.6, or 2.0 when the driving model is in control. Behind
+      a car pulling away it is the same, unless Keep Up With Traffic lifts it.
     options:
     - value: 0
       label: Aggressive
@@ -63,8 +66,9 @@ sections:
     title: Traffic Mode
     description: 'Shorter gap for stop-and-go traffic: about 0.5 s behind the car ahead when nearly stopped, rising
       to 1.0 s from about 11 mph and staying at 1.0 s at every speed until turned off (Aggressive is 1.25 s). Ignores
-      Following Distance Offset while on. Hold the left thumb button on the steering wheel for 1 second to toggle,
-      or tap the T on the comma four home screen while the truck is off. Stays on or off until you change it.'
+      Following Distance Offset while on. Press and hold the right scroll wheel on the steering wheel (its middle
+      button) for 1 second to toggle, or tap the T on the comma four home screen while the truck is off. Stays on or
+      off until you change it.'
     enablement:
     - $ref: '#/macros/longitudinal'
   - key: RedLightStopDistance
@@ -97,28 +101,27 @@ sections:
       sunnypilot may accelerate harder to close it, instead of letting it open up. It builds up over the first 30 ft or
       so past your following distance, and tapers to half the increase from 22 to 45 mph. How much depends on Driving
       Personality. Aggressive goes up to 2.0 m/s² (about 0.2 g) from a stop and at 22 mph, 1.1 at 56 mph. Standard gets
-      half of that increase (1.8, 1.6, 0.95) and Relaxed a quarter (1.7, 1.4, 0.9), against the default cap of 1.6 m/s²
-      from a stop, 1.2 at 22 mph and 0.8 at 56 mph.
-      Only on fairly straight roads, and not while the driving model is in control (Experimental Mode or Dynamic
-      Experimental Control in its end-to-end mode). Braking and your following distance are unchanged, and with no car
-      ahead the default cap stays. Can be changed while driving.
+      half of that increase (1.6, 1.6, 0.95) and Relaxed a quarter (1.25, 1.35, 0.9), against the default cap of 1.4,
+      1.2 or 1.0 m/s² from a stop (by personality), about 1.2 at 22 mph and 0.8 at 56 mph.
+      On radar cruise, only on fairly straight roads. While the driving model is in control (Experimental Mode or
+      Dynamic Experimental Control in its end-to-end mode) it lifts the low-speed pull-away limit instead. Braking and
+      your following distance are unchanged, and with no car ahead the default cap stays. Can be changed while driving.
     enablement:
     - $ref: '#/macros/longitudinal'
   - key: BrakeSoonerForStops
     widget: toggle
     title: Brake Sooner for Stops
-    description: Dynamic Experimental Control waits until the driving model wants fairly firm braking before it lets
-      the model slow the truck, and above 37 mph that wait gets longer the faster you go. With this on, the model can
-      start slowing for a red light, a stop sign or stopped traffic sooner, about 1.5 seconds sooner at 45 mph and 2.5
-      to 3 seconds at 50 to 55 mph, so braking starts earlier and builds up gently instead of coming on all at once.
-      Above 62 mph it keeps the 62 mph setting, so it still hands over sooner than without it. With no car ahead it can
-      also hand over briefly on a sharp curve, where the model may ease off a little. Only with Experimental Mode and
+    description: Two parts. For stopped or slow cars the radar picks up ahead, in any mode, braking starts sooner and
+      builds up more gently. It plans the stop with about 1.5 m/s² of braking instead of 2.5, and the swing from the gas
+      into braking eases in. That only applies while a gentle stop is still possible; a car seen late gets the normal,
+      firmer braking. For red lights, stop signs and stopped traffic the driving model sees first, Dynamic Experimental
+      Control waits until the model wants fairly firm braking before it lets the model slow the truck, and above 37 mph
+      that wait gets longer the faster you go. With this on, it hands over about 1.5 seconds sooner at 45 mph and 2.5 to
+      3 seconds sooner at 50 to 55 mph. Above 62 mph it keeps the 62 mph setting. With no car ahead it can also hand over
+      briefly on a sharp curve, where the model may ease off a little. That second part needs Experimental Mode and
       Dynamic Experimental Control both on. Can be changed while driving.
     enablement:
     - $ref: '#/macros/longitudinal'
-    - type: param
-      key: DynamicExperimentalControl
-      equals: true
   - key: RivianLaunchAssist
     widget: toggle
     title: Launch Assist

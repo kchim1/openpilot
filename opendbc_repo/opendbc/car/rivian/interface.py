@@ -1,9 +1,10 @@
-from opendbc.car import get_safety_config, structs
+from opendbc.car import get_safety_config, scale_rot_inertia, scale_tire_stiffness, structs
 from opendbc.car.interfaces import CarInterfaceBase
 from opendbc.car.rivian.carcontroller import CarController
 from opendbc.car.rivian.carstate import CarState
 from opendbc.car.rivian.radar_interface import RadarInterface
-from opendbc.car.rivian.values import RivianFlags, RivianSafetyFlags
+from opendbc.car.rivian.values import ModelLine, RivianFlags, RivianSafetyFlags, R1S_WHEELBASE
+from opendbc.car.vin import Vin
 from opendbc.sunnypilot.car.rivian.values import RivianFlagsSP
 
 
@@ -52,6 +53,18 @@ class CarInterface(CarInterfaceBase):
   @staticmethod
   def _get_params_sp(stock_cp: structs.CarParams, ret: structs.CarParamsSP, candidate, fingerprint: dict[int, dict[int, int]],
                      car_fw: list[structs.CarParams.CarFw], alpha_long: bool, is_release_sp: bool, docs: bool) -> structs.CarParamsSP:
+    # The body from the VIN (set by get_car before this runs): an R1S has the R1T's steering rack on a shorter wheelbase.
+    # Across 62 public trucks the steering angle per curvature was 47.9 rad*m on R1Ss and 53.9 on R1Ts (1.126x, the
+    # wheelbase ratio 1.122). An unknown VIN keeps the R1T's. paramsd keeps what it learned (steer ratio x wheelbase)
+    # across a wheelbase change, so a truck that has learned steers the same either way.
+    if Vin(stock_cp.carVin).vds[:1] == ModelLine.R1S:
+      stock_cp.centerToFront *= R1S_WHEELBASE / stock_cp.wheelbase
+      stock_cp.wheelbase = R1S_WHEELBASE
+      stock_cp.rotationalInertia = scale_rot_inertia(stock_cp.mass, stock_cp.wheelbase)
+      stock_cp.tireStiffnessFront, stock_cp.tireStiffnessRear = scale_tire_stiffness(stock_cp.mass, stock_cp.wheelbase,
+                                                                                     stock_cp.centerToFront,
+                                                                                     stock_cp.tireStiffnessFactor)
+
     if 0x131a in fingerprint[1]:
       ret.flags |= RivianFlagsSP.LONGITUDINAL_HARNESS_UPGRADE.value
       stock_cp.radarUnavailable = False
