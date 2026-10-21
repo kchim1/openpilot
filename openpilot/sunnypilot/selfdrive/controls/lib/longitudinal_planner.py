@@ -18,6 +18,7 @@ from openpilot.selfdrive.controls.lib.longitudinal_mpc_lib.long_mpc import clip_
 from openpilot.sunnypilot.selfdrive.controls.lib.dec.dec import DynamicExperimentalController
 from openpilot.sunnypilot.selfdrive.controls.lib.e2e_alerts_helper import E2EAlertsHelper
 from openpilot.sunnypilot.selfdrive.controls.lib.red_light_stop import RedLightStop
+from openpilot.sunnypilot.selfdrive.controls.lib.stop_behind_lead import StopBehindLead
 from openpilot.sunnypilot.selfdrive.controls.lib.smart_cruise_control.smart_cruise_control import SmartCruiseControl
 from openpilot.sunnypilot.selfdrive.controls.lib.speed_limit.speed_limit_assist import SpeedLimitAssist
 from openpilot.sunnypilot.selfdrive.controls.lib.speed_limit.speed_limit_resolver import SpeedLimitResolver
@@ -83,6 +84,7 @@ class LongitudinalPlannerSP:
     self._launch_assist_frame = 0
     self._launch_assist_error_logged = False
     self.red_light_stop = RedLightStop(CP, self._params)
+    self.stop_behind_lead = StopBehindLead(CP)
     self._keep_pace_available = CP.openpilotLongitudinalControl
     self._keep_pace_enabled = False
     self._keep_pace_read_frame = 0

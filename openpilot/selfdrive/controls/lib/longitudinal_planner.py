@@ -183,6 +183,11 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
                                            long_off=reset_state)
     if red_light is not None:
       candidates.append((red_light[0], LongitudinalPlanSource.e2e, red_light[1]))
+    # Stop behind a stopped car at walking pace instead of crawling up to the standstill gap
+    stop_behind = self.stop_behind_lead.update(v_ego, sm['radarState'].leadOne, long_off=reset_state,
+                                               traffic_mode=self.mpc.traffic_mode)
+    if stop_behind is not None:
+      candidates.append((stop_behind[0], LongitudinalPlanSource.lead0, stop_behind[1]))
 
     output_a_target, self.mpc.source, _ = min(candidates, key=lambda c: c[0])
     self.output_should_stop = any(should_stop for _, _, should_stop in candidates)
