@@ -91,7 +91,7 @@ class Controls(ControlsExt):
 
     # Rear-axle off-tracking compensation, R1T-specific (see wheelbase-offtracking-plan.md)
     self.rivian_offtrack = RivianOfftrackCompensation(self.params) if self.CP.brand == 'rivian' else None
-    # Sharp Turn Steering: more of the model's curvature in tight low-speed turns (Rivian, the default driving model)
+    # Sharp Turn Steering: more of the model's curvature in tight low-speed turns (Rivian, the Chestnut's bundled big model)
     self.sharp_turn = SharpTurnSteering(self.params) if self.CP.brand == 'rivian' else None
     # Rivian Launch Assist (RivianLaunchAssist toggle, sunnypilot longitudinal only)
     self.launch_assist = LaunchAssist(self.params) if LaunchAssist.available(self.CP) else None
