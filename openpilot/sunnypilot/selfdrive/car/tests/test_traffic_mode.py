@@ -58,21 +58,32 @@ def current_alerts(alert_types, add_events, frames=400):
   return current
 
 
-class TestTrafficModePersistence(OpenpilotTestCase):
-  """Traffic Mode stays as the driver left it: not reset at the end of a drive or when the device restarts."""
-  def test_survives_drive_end_and_reboot(self):
+class TestTrafficModeReset(OpenpilotTestCase):
+  """Traffic Mode is off again at the end of every drive and when the device starts, but kept when a drive starts, so the
+  home screen T tapped while the truck is off still counts for the next drive."""
+  def test_off_at_drive_end_and_device_start(self):
+    params = Params()
+    # what manager does at the end of every drive (the offroad transition) and at start (manager_init clears every flag)
+    for flags in ((ParamKeyFlag.CLEAR_ON_OFFROAD_TRANSITION,),
+                  (ParamKeyFlag.CLEAR_ON_MANAGER_START, ParamKeyFlag.CLEAR_ON_ONROAD_TRANSITION,
+                   ParamKeyFlag.CLEAR_ON_OFFROAD_TRANSITION, ParamKeyFlag.CLEAR_ON_IGNITION_ON)):
+      params.put_bool("TrafficMode", True, block=True)
+      for flag in flags:
+        params.clear_all(flag)
+      assert params.get_bool("TrafficMode") is False
+
+  def test_kept_when_a_drive_starts(self):
     params = Params()
     for on in (True, False):
       params.put_bool("TrafficMode", on, block=True)
-      # what manager does at start, and on every onroad/offroad transition and ignition on
-      for flag in (ParamKeyFlag.CLEAR_ON_MANAGER_START, ParamKeyFlag.CLEAR_ON_ONROAD_TRANSITION,
-                   ParamKeyFlag.CLEAR_ON_OFFROAD_TRANSITION, ParamKeyFlag.CLEAR_ON_IGNITION_ON):
+      # ignition on, then the onroad transition
+      for flag in (ParamKeyFlag.CLEAR_ON_IGNITION_ON, ParamKeyFlag.CLEAR_ON_ONROAD_TRANSITION):
         params.clear_all(flag)
       assert params.get_bool("TrafficMode") is on
 
-  def test_persistent_and_backed_up(self):
-    assert b"TrafficMode" in Params().all_keys(ParamKeyFlag.PERSISTENT)
-    assert b"TrafficMode" in Params().all_keys(ParamKeyFlag.BACKUP)
+  def test_not_persistent_or_backed_up(self):
+    assert b"TrafficMode" not in Params().all_keys(ParamKeyFlag.PERSISTENT)
+    assert b"TrafficMode" not in Params().all_keys(ParamKeyFlag.BACKUP)
 
   def test_defaults_off(self):
     params = Params()

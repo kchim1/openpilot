@@ -287,8 +287,9 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
 
     // Traffic Mode: shorter follow time for stop-and-go traffic, ignores SPFollowingTimeOffset while on (a Rivian's
     // RivianFollowDistance with the offset still caps it).
-    // Switchable while driving (plannerd re-reads it every 0.25 s); stays as set across drives and reboots.
-    {"TrafficMode", {PERSISTENT | BACKUP, BOOL, "0"}},
+    // Switchable while driving (plannerd re-reads it every 0.25 s). Off again at the end of every drive and when the
+    // device starts, but kept when a drive starts, so the home screen T tapped while the truck is off still counts.
+    {"TrafficMode", {CLEAR_ON_MANAGER_START | CLEAR_ON_OFFROAD_TRANSITION, BOOL, "0"}},
 
     // Red Light Stop Distance: meters to stop short of where the driving model plans to stop for a red light, 0 to 5.
     // End to end longitudinal only (Experimental Mode). plannerd re-reads it every 1 s.
