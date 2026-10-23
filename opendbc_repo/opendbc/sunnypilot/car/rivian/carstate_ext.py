@@ -25,9 +25,9 @@ TRAFFIC_MODE_HOLD_FRAMES = 100
 # Right thumb wheel (RightButton_Scroll): a position counter, +1 a notch one way and -1 the other, wrapping through 255
 # (= -1: route 00000017 612.36 s, one notch from 0 read 255 and stayed). 0 when the truck wakes, but it keeps counting
 # while the truck is awake, so the first frame received is only a baseline.
-# The sign of a notch UP is not in any log. The left wheel (volume) climbs in single notches and drops in quick runs, as
-# volume up/down would, so +1 is likely; checked on the first drive (one notch up must show "Following Distance: Far")
-RIGHT_SCROLL_UP_SIGN = 1
+# A notch UP steps the counter down: in the driveway check (Oct 23, 2026) a notch up with +1 here showed
+# "Following Distance: Close". (The left wheel, volume, had suggested +1.)
+RIGHT_SCROLL_UP_SIGN = -1
 SCROLL_MAX_STEP = 5  # notches in one 50 ms frame (3 seen); more is a glitch or a reset: resync, no request
 
 

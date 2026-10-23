@@ -8,7 +8,7 @@ from opendbc.car.common.conversions import Conversions as CV
 from opendbc.car.rivian.interface import CarInterface
 from opendbc.car.rivian.values import CAR
 from opendbc.sunnypilot.car import FOLLOW_DISTANCE_CLOSER_BUTTON, FOLLOW_DISTANCE_FARTHER_BUTTON, TRAFFIC_MODE_BUTTON
-from opendbc.sunnypilot.car.rivian.carstate_ext import CarStateExt, SCROLL_MAX_STEP, TRAFFIC_MODE_HOLD_FRAMES
+from opendbc.sunnypilot.car.rivian.carstate_ext import CarStateExt, RIGHT_SCROLL_UP_SIGN, SCROLL_MAX_STEP, TRAFFIC_MODE_HOLD_FRAMES
 from opendbc.sunnypilot.car.rivian.values import RivianFlagsSP
 
 ButtonType = structs.CarState.ButtonEvent.Type
@@ -17,6 +17,9 @@ SET_SPEED_MPH = 50
 TOGGLE = (TRAFFIC_MODE_BUTTON, False)
 FARTHER = (FOLLOW_DISTANCE_FARTHER_BUTTON, False)
 CLOSER = (FOLLOW_DISTANCE_CLOSER_BUTTON, False)
+# the wheel's counter steps +1 one way and -1 the other, and a notch up is RIGHT_SCROLL_UP_SIGN: what each step sends
+INC = FARTHER if RIGHT_SCROLL_UP_SIGN > 0 else CLOSER
+DEC = CLOSER if RIGHT_SCROLL_UP_SIGN > 0 else FARTHER
 
 
 def button_events(ret):
@@ -128,7 +131,7 @@ class TestSetSpeedButtons(unittest.TestCase):
     # and the roll is not sent later on release either
     self.assertEqual(button_events(self._frame()), [])
     self.scroll += 1
-    self.assertEqual(button_events(self._frame()), [FARTHER])
+    self.assertEqual(button_events(self._frame()), [INC])
 
   def test_rolling_down_while_pressed_in_does_nothing(self):
     self._frame()
@@ -161,41 +164,48 @@ class TestFollowDistanceWheel(unittest.TestCase):
       self.scroll = scroll
     return button_events(TestSetSpeedButtons._frame(self, **kwargs))
 
-  def test_one_notch_up_is_one_farther(self):
+  def test_a_notch_up_is_farther(self):
+    # the driveway check (Oct 23, 2026): a notch up steps the counter down
+    self.assertEqual(RIGHT_SCROLL_UP_SIGN, -1)
+    self.assertEqual(self._frame(10), [])
+    self.assertEqual(self._frame(9), [FARTHER])
+    self.assertEqual(self._frame(10), [CLOSER])
+
+  def test_one_step_up_the_counter_is_one_event(self):
     self.assertEqual(self._frame(0), [])
-    self.assertEqual(self._frame(1), [FARTHER])
+    self.assertEqual(self._frame(1), [INC])
     # the counter holds its position: nothing more on the next frames
     for _ in range(10):
       self.assertEqual(self._frame(), [])
 
-  def test_one_notch_down_is_one_closer(self):
+  def test_one_step_down_the_counter_is_one_event(self):
     self.assertEqual(self._frame(6), [])
-    self.assertEqual(self._frame(5), [CLOSER])
+    self.assertEqual(self._frame(5), [DEC])
     self.assertEqual(self._frame(), [])
 
   def test_wraps_through_255(self):
-    # route 00000017 612.36 s: one notch down from 0 read 255, which the old decoding dropped as invalid
+    # route 00000017 612.36 s: one notch from 0 read 255, which the old decoding dropped as invalid
     self.assertEqual(self._frame(0), [])
-    self.assertEqual(self._frame(255), [CLOSER])
+    self.assertEqual(self._frame(255), [DEC])
     self.assertEqual(self._frame(), [])
-    self.assertEqual(self._frame(0), [FARTHER])
-    self.assertEqual(self._frame(254), [CLOSER, CLOSER])
-    self.assertEqual(self._frame(1), [FARTHER, FARTHER, FARTHER])
+    self.assertEqual(self._frame(0), [INC])
+    self.assertEqual(self._frame(254), [DEC, DEC])
+    self.assertEqual(self._frame(1), [INC, INC, INC])
 
   def test_quick_flick_sends_one_event_per_notch(self):
     # the left wheel was seen moving 3 in one 50 ms frame
     self.assertEqual(self._frame(10), [])
-    self.assertEqual(self._frame(13), [FARTHER] * 3)
-    self.assertEqual(self._frame(10), [CLOSER] * 3)
-    self.assertEqual(self._frame(10 + SCROLL_MAX_STEP), [FARTHER] * SCROLL_MAX_STEP)
+    self.assertEqual(self._frame(13), [INC] * 3)
+    self.assertEqual(self._frame(10), [DEC] * 3)
+    self.assertEqual(self._frame(10 + SCROLL_MAX_STEP), [INC] * SCROLL_MAX_STEP)
 
   def test_a_jump_is_dropped_and_the_wheel_works_from_the_new_value(self):
     self.assertEqual(self._frame(0), [])
     self.assertEqual(self._frame(40), [])
-    self.assertEqual(self._frame(41), [FARTHER])
+    self.assertEqual(self._frame(41), [INC])
     self.assertEqual(self._frame(41 + SCROLL_MAX_STEP + 1), [])
     self.assertEqual(self._frame(41 - SCROLL_MAX_STEP), [])  # -7 from 47
-    self.assertEqual(self._frame(35), [CLOSER])
+    self.assertEqual(self._frame(35), [DEC])
 
   def test_first_frame_is_only_a_baseline(self):
     # the counter keeps counting while the truck is awake, so it can be anywhere when openpilot starts
@@ -210,7 +220,7 @@ class TestFollowDistanceWheel(unittest.TestCase):
     for _ in range(5):
       self.assertEqual(self._frame(3, received=False), [])
     self.assertEqual(self._frame(3), [])
-    self.assertEqual(self._frame(4), [FARTHER])
+    self.assertEqual(self._frame(4), [INC])
 
   def test_traffic_mode_hold_still_toggles_once(self):
     self.assertEqual(self._frame(0), [])
@@ -219,12 +229,12 @@ class TestFollowDistanceWheel(unittest.TestCase):
       events += self._frame(middle=True)
     self.assertEqual(events, [TOGGLE])
 
-  def test_up_sign_reversed(self):
-    # if the driveway check shows a notch up reads -1, RIGHT_SCROLL_UP_SIGN = -1 is the only change
-    with mock.patch("opendbc.sunnypilot.car.rivian.carstate_ext.RIGHT_SCROLL_UP_SIGN", -1):
+  def test_up_sign_is_the_one_constant(self):
+    # RIGHT_SCROLL_UP_SIGN alone sets the direction: with +1 a step up the counter is farther
+    with mock.patch("opendbc.sunnypilot.car.rivian.carstate_ext.RIGHT_SCROLL_UP_SIGN", 1):
       self.assertEqual(self._frame(0), [])
-      self.assertEqual(self._frame(1), [CLOSER])
-      self.assertEqual(self._frame(255), [FARTHER, FARTHER])
+      self.assertEqual(self._frame(1), [FARTHER])
+      self.assertEqual(self._frame(255), [CLOSER, CLOSER])
 
   def test_through_the_real_can_parser(self):
     # card's path: WheelButtons_Fwd (0x131A) on bus 1 parsed by the CarInterface, the counter starting at 3
@@ -243,7 +253,7 @@ class TestFollowDistanceWheel(unittest.TestCase):
                                                                   "RightButton_LeftClick": 1, "RightButton_RightClick": 1}))
         ret, _ = CI.update([(t, msgs)])
         events.append(button_events(ret))
-    self.assertEqual([e for e in events if e], [[FARTHER], [CLOSER, CLOSER], [CLOSER] * 3])
+    self.assertEqual([e for e in events if e], [[INC], [DEC, DEC], [DEC] * 3])
 
 
 if __name__ == "__main__":
