@@ -270,4 +270,22 @@ EVENTS_SP: dict[int, dict[str, Alert | AlertCallbackType]] = {
   EventNameSP.trafficModeOff: {
     ET.PERMANENT: NormalPermanentAlert("Traffic Mode Off", duration=2.),
   },
+
+  # Rivian Following Distance, on every change and on every notch of the right thumb wheel (also when the notch only
+  # shows the level). PERMANENT and LOWER priority, like Traffic Mode's
+  EventNameSP.followDistanceCloser: {
+    ET.PERMANENT: NormalPermanentAlert("Following Distance: Closer", duration=1.5),
+  },
+
+  EventNameSP.followDistanceClose: {
+    ET.PERMANENT: NormalPermanentAlert("Following Distance: Close", duration=1.5),
+  },
+
+  EventNameSP.followDistanceMedium: {
+    ET.PERMANENT: NormalPermanentAlert("Following Distance: Medium", duration=1.5),
+  },
+
+  EventNameSP.followDistanceFar: {
+    ET.PERMANENT: NormalPermanentAlert("Following Distance: Far", duration=1.5),
+  },
 }

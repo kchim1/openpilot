@@ -93,7 +93,7 @@ class Controls(ControlsExt):
     self.rivian_offtrack = RivianOfftrackCompensation(self.params) if self.CP.brand == 'rivian' else None
     # Sharp Turn Steering: more of the model's curvature in tight low-speed turns (Rivian, the Chestnut's bundled big model)
     self.sharp_turn = SharpTurnSteering(self.params) if self.CP.brand == 'rivian' else None
-    # Rivian Launch Assist (RivianLaunchAssist toggle, sunnypilot longitudinal only)
+    # Rivian Launch Assist (RivianLaunchAssist toggle and RivianLaunchAssistBoost strength, sunnypilot longitudinal only)
     self.launch_assist = LaunchAssist(self.params) if LaunchAssist.available(self.CP) else None
 
   def update(self):
@@ -164,7 +164,8 @@ class Controls(ControlsExt):
     actuators.accel = float(self.LoC.update(CC.longActive, CS, long_plan.aTarget, long_plan.shouldStop, pid_accel_limits))
     if self.launch_assist is not None:
       actuators.accel = float(self.launch_assist.update(CC.longActive, CS, self.sm['radarState'].leadOne, self.LoC.long_control_state,
-                                                        long_plan.aTarget, long_plan.shouldStop, actuators.accel, pid_accel_limits))
+                                                        long_plan.aTarget, long_plan.shouldStop, actuators.accel, pid_accel_limits,
+                                                        model=model_v2, personality=self.sm['selfdriveState'].personality))
 
     # Steering PID loop and lateral MPC
     # Reset desired curvature to current to avoid violating the limits on engage

@@ -285,7 +285,8 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     // Read by the sunnypilot longitudinal planner at the start of each drive.
     {"SPFollowingTimeOffset", {PERSISTENT | BACKUP, INT, "0"}},
 
-    // Traffic Mode: shorter follow time for stop-and-go traffic, ignores SPFollowingTimeOffset while on.
+    // Traffic Mode: shorter follow time for stop-and-go traffic, ignores SPFollowingTimeOffset while on (a Rivian's
+    // RivianFollowDistance with the offset still caps it).
     // Switchable while driving (plannerd re-reads it every 0.25 s); stays as set across drives and reboots.
     {"TrafficMode", {PERSISTENT | BACKUP, BOOL, "0"}},
 
@@ -327,7 +328,15 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     // Rivian: steer on the torque channel only, never hand back to angle. For collecting
     // torque calibration data on an angle-upgrade truck. Read once at the start of a drive.
     {"RivianForceTorqueSteering", {PERSISTENT | BACKUP, BOOL, "0"}},
-    // Rivian Launch Assist (sunnypilot longitudinal): a short 0.5 m/s^2 floor when a stopped radar lead
-    // pulls away, to get past the VDM standstill dead zone. controlsd and plannerd re-read it about once a second.
+    // Rivian Launch Assist (sunnypilot longitudinal): a floor on the request for up to 2 s of a launch from a stop, as
+    // hard as a stopped radar lead pulls away (or the model's plan with no lead). controlsd and plannerd re-read it
+    // about once a second.
     {"RivianLaunchAssist", {PERSISTENT | BACKUP, BOOL, "0"}},
+    // Rivian Launch Assist strength: 1 Strong (floor up to 0.8 / 0.7 / 0.6 m/s^2 behind a car, 0.6 / 0.5 / 0.4 with
+    // none, for Aggressive / Standard / Relaxed), 0 Gentle (each 0.1 lower). controlsd re-reads it with RivianLaunchAssist.
+    {"RivianLaunchAssistBoost", {PERSISTENT | BACKUP, INT, "1"}},
+    // Rivian Following Distance (sunnypilot longitudinal, harness upgrade): 0 Closer, 1 Close, 2 Medium, 3 Far = 1.00,
+    // 1.10, 1.25, 1.45 s before SPFollowingTimeOffset, instead of the personality's follow time. Stepped by the right
+    // thumb wheel (up = farther) while engaged or stopped; plannerd re-reads it every 0.25 s.
+    {"RivianFollowDistance", {PERSISTENT | BACKUP, INT, "2"}},
 };

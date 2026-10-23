@@ -222,6 +222,10 @@ enum class EventName_b8007ed8a646b5e6: uint16_t {
   BIG_MODEL_READY,
   TRAFFIC_MODE_ON,
   TRAFFIC_MODE_OFF,
+  FOLLOW_DISTANCE_CLOSER,
+  FOLLOW_DISTANCE_CLOSE,
+  FOLLOW_DISTANCE_MEDIUM,
+  FOLLOW_DISTANCE_FAR,
 };
 CAPNP_DECLARE_ENUM(EventName, b8007ed8a646b5e6);
 CAPNP_DECLARE_SCHEMA(80ae746ee2596b11);
@@ -661,7 +665,7 @@ struct LongitudinalPlanSP::FollowDistance {
   class Pipeline;
 
   struct _capnpPrivate {
-    CAPNP_DECLARE_STRUCT_HEADER(f530307bb2c30352, 2, 0)
+    CAPNP_DECLARE_STRUCT_HEADER(f530307bb2c30352, 4, 0)
     #if !CAPNP_LITE
     static constexpr ::capnp::_::RawBrandedSchema const* brand() { return &schema->defaultBrand; }
     #endif  // !CAPNP_LITE
@@ -3375,6 +3379,14 @@ public:
 
   inline float getJerkFactor() const;
 
+  inline  ::int8_t getLevel() const;
+
+  inline float getTFollowBase() const;
+
+  inline float getTrafficModeShift() const;
+
+  inline float getALeadFast() const;
+
 private:
   ::capnp::_::StructReader _reader;
   template <typename, ::capnp::Kind>
@@ -3414,6 +3426,18 @@ public:
 
   inline float getJerkFactor();
   inline void setJerkFactor(float value);
+
+  inline  ::int8_t getLevel();
+  inline void setLevel( ::int8_t value);
+
+  inline float getTFollowBase();
+  inline void setTFollowBase(float value);
+
+  inline float getTrafficModeShift();
+  inline void setTrafficModeShift(float value);
+
+  inline float getALeadFast();
+  inline void setALeadFast(float value);
 
 private:
   ::capnp::_::StructBuilder _builder;
@@ -7989,6 +8013,62 @@ inline float LongitudinalPlanSP::FollowDistance::Builder::getJerkFactor() {
 inline void LongitudinalPlanSP::FollowDistance::Builder::setJerkFactor(float value) {
   _builder.setDataField<float>(
       ::capnp::bounded<3>() * ::capnp::ELEMENTS, value);
+}
+
+inline  ::int8_t LongitudinalPlanSP::FollowDistance::Reader::getLevel() const {
+  return _reader.getDataField< ::int8_t>(
+      ::capnp::bounded<1>() * ::capnp::ELEMENTS, -1);
+}
+
+inline  ::int8_t LongitudinalPlanSP::FollowDistance::Builder::getLevel() {
+  return _builder.getDataField< ::int8_t>(
+      ::capnp::bounded<1>() * ::capnp::ELEMENTS, -1);
+}
+inline void LongitudinalPlanSP::FollowDistance::Builder::setLevel( ::int8_t value) {
+  _builder.setDataField< ::int8_t>(
+      ::capnp::bounded<1>() * ::capnp::ELEMENTS, value, -1);
+}
+
+inline float LongitudinalPlanSP::FollowDistance::Reader::getTFollowBase() const {
+  return _reader.getDataField<float>(
+      ::capnp::bounded<4>() * ::capnp::ELEMENTS);
+}
+
+inline float LongitudinalPlanSP::FollowDistance::Builder::getTFollowBase() {
+  return _builder.getDataField<float>(
+      ::capnp::bounded<4>() * ::capnp::ELEMENTS);
+}
+inline void LongitudinalPlanSP::FollowDistance::Builder::setTFollowBase(float value) {
+  _builder.setDataField<float>(
+      ::capnp::bounded<4>() * ::capnp::ELEMENTS, value);
+}
+
+inline float LongitudinalPlanSP::FollowDistance::Reader::getTrafficModeShift() const {
+  return _reader.getDataField<float>(
+      ::capnp::bounded<5>() * ::capnp::ELEMENTS);
+}
+
+inline float LongitudinalPlanSP::FollowDistance::Builder::getTrafficModeShift() {
+  return _builder.getDataField<float>(
+      ::capnp::bounded<5>() * ::capnp::ELEMENTS);
+}
+inline void LongitudinalPlanSP::FollowDistance::Builder::setTrafficModeShift(float value) {
+  _builder.setDataField<float>(
+      ::capnp::bounded<5>() * ::capnp::ELEMENTS, value);
+}
+
+inline float LongitudinalPlanSP::FollowDistance::Reader::getALeadFast() const {
+  return _reader.getDataField<float>(
+      ::capnp::bounded<6>() * ::capnp::ELEMENTS);
+}
+
+inline float LongitudinalPlanSP::FollowDistance::Builder::getALeadFast() {
+  return _builder.getDataField<float>(
+      ::capnp::bounded<6>() * ::capnp::ELEMENTS);
+}
+inline void LongitudinalPlanSP::FollowDistance::Builder::setALeadFast(float value) {
+  _builder.setDataField<float>(
+      ::capnp::bounded<6>() * ::capnp::ELEMENTS, value);
 }
 
 inline bool OnroadEventSP::Reader::hasEvents() const {

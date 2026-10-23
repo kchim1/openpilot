@@ -11,11 +11,9 @@ from opendbc.car import Bus, structs
 from opendbc.can.parser import CANParser
 from opendbc.car.common.conversions import Conversions as CV
 from opendbc.car.rivian.values import DBC
-from opendbc.sunnypilot.car import TRAFFIC_MODE_BUTTON
+from opendbc.sunnypilot.car import FOLLOW_DISTANCE_CLOSER_BUTTON, FOLLOW_DISTANCE_FARTHER_BUTTON, TRAFFIC_MODE_BUTTON
 from opendbc.sunnypilot.car.rivian.acc_fault_recorder import AccFaultRecorder
 from opendbc.sunnypilot.car.rivian.values import RivianFlagsSP
-
-ButtonType = structs.CarState.ButtonEvent.Type
 
 MAX_SET_SPEED = 85 * CV.MPH_TO_MS
 MIN_SET_SPEED = 20 * CV.MPH_TO_MS
@@ -23,6 +21,14 @@ MIN_SET_SPEED = 20 * CV.MPH_TO_MS
 # Holding the right thumb control's middle button (pressing the scroll wheel in) this long toggles Traffic Mode.
 # carState is updated at 100 Hz (card), so 100 frames is 1.0 s
 TRAFFIC_MODE_HOLD_FRAMES = 100
+
+# Right thumb wheel (RightButton_Scroll): a position counter, +1 a notch one way and -1 the other, wrapping through 255
+# (= -1: route 00000017 612.36 s, one notch from 0 read 255 and stayed). 0 when the truck wakes, but it keeps counting
+# while the truck is awake, so the first frame received is only a baseline.
+# The sign of a notch UP is not in any log. The left wheel (volume) climbs in single notches and drops in quick runs, as
+# volume up/down would, so +1 is likely; checked on the first drive (one notch up must show "Following Distance: Far")
+RIGHT_SCROLL_UP_SIGN = 1
+SCROLL_MAX_STEP = 5  # notches in one 50 ms frame (3 seen); more is a glitch or a reset: resync, no request
 
 
 class CarStateExt:
@@ -33,7 +39,7 @@ class CarStateExt:
     self.set_speed = 10
     self.increase_button = False
     self.decrease_button = False
-    self.distance_button = 0
+    self.right_scroll_prev = None
     self.increase_counter = 0
     self.decrease_counter = 0
     self.traffic_mode_button = False
@@ -54,13 +60,17 @@ class CarStateExt:
       # the scroll wheel pressed in: the Traffic Mode button below
       self.traffic_mode_button = cp_park.vl["WheelButtons_Fwd"]["RightButton_ScrollClick"] == 2
 
-      # distance scroll wheel. Not while it is pressed in: pressing it in for Traffic Mode can also roll it a notch,
-      # which would change the driving personality
-      right_scroll = cp_park.vl["WheelButtons_Fwd"]["RightButton_Scroll"]
-      if right_scroll != 255:
-        if self.distance_button != right_scroll and not self.traffic_mode_button:
-          button_events.append(structs.CarState.ButtonEvent(pressed=False, type=ButtonType.gapAdjustCruise))
-        self.distance_button = right_scroll
+      # the scroll wheel sets the Following Distance: one event per notch, up = farther (Rivian's own cruise: thumb control
+      # up = increase following distance). Counted from the first frame received (the parser reads 0 until then). Not
+      # while it is pressed in: pressing it in for Traffic Mode can also roll it a notch
+      right_scroll = int(cp_park.vl["WheelButtons_Fwd"]["RightButton_Scroll"])
+      if cp_park.ts_nanos["WheelButtons_Fwd"]["RightButton_Scroll"]:
+        if self.right_scroll_prev is not None:
+          step = ((right_scroll - self.right_scroll_prev + 128) % 256) - 128
+          if step != 0 and abs(step) <= SCROLL_MAX_STEP and not self.traffic_mode_button:
+            btn = FOLLOW_DISTANCE_FARTHER_BUTTON if step * RIGHT_SCROLL_UP_SIGN > 0 else FOLLOW_DISTANCE_CLOSER_BUTTON
+            button_events += [structs.CarState.ButtonEvent(pressed=False, type=btn) for _ in range(abs(step))]
+        self.right_scroll_prev = right_scroll
 
       # button logic for set-speed
       self.increase_button = cp_park.vl["WheelButtons_Fwd"]["RightButton_RightClick"] == 2

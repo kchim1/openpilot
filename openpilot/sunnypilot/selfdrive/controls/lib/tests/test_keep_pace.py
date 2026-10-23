@@ -13,7 +13,7 @@ from opendbc.car import structs
 from openpilot.common.params import Params, ParamKeyFlag, UnknownKeyName
 from openpilot.common.test import OpenpilotTestCase
 from openpilot.selfdrive.controls.lib.longitudinal_planner import LongitudinalPlanner, get_max_accel, get_cruise_accel, \
-  A_CRUISE_MAX_VALS, A_FOLLOW_MAX_VALS, apply_launch_cap
+  A_CRUISE_MAX_VALS, A_FOLLOW_MAX_VALS, apply_launch_cap, TRAFFIC_MODE_ACCEL_CAP
 from openpilot.selfdrive.controls.lib.longitudinal_mpc_lib.long_mpc import get_safe_obstacle_distance, get_stopped_equivalence_factor
 from openpilot.sunnypilot.selfdrive.controls.lib.longitudinal_planner import LongitudinalPlannerSP, KEEP_PACE_READ_FRAMES, \
   KEEP_PACE_V_MIN, KEEP_PACE_EXCESS_BP, KEEP_PACE_OFF_FRAMES, KEEP_PACE_SHARE_STANDARD, KEEP_PACE_SHARE_RELAXED, keep_pace_share
@@ -220,3 +220,18 @@ class TestKeepPacePlanner(OpenpilotTestCase):
       base = apply_launch_cap(get_max_accel(5.), 5., personality)
       assert base < get_max_accel(5.)
       self.assertAlmostEqual(self.run_planner(True, personality).a_cruise, base + share * (2.0 - base), places=3)
+
+  def test_traffic_mode_caps_it(self):
+    # Traffic Mode up to 30 mph: Keep Up With Traffic gets the truck no more than 1.5 m/s^2, nor the planner's output
+    params = Params()
+    params.put_bool("KeepPaceWithTraffic", True, block=True)
+    params.put_bool("TrafficMode", True, block=True)
+    planner = LongitudinalPlanner(CP, structs.CarParamsSP(), init_v=5.)
+    sm = build_sm(5., 25., 9.)
+    outputs = []
+    for _ in range(100):
+      planner.update(sm)
+      outputs.append(float(planner.output_a_target))
+    assert planner.mpc.traffic_mode
+    self.assertAlmostEqual(planner.a_cruise, TRAFFIC_MODE_ACCEL_CAP, places=3)
+    assert max(outputs) <= TRAFFIC_MODE_ACCEL_CAP + 1e-6

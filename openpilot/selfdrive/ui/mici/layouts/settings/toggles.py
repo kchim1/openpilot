@@ -46,7 +46,9 @@ class TogglesLayoutMici(NavScroller):
                                                    description="Standard is recommended.\n" +
                                                                "Aggressive follows closer, with firmer gas and braking.\n" +
                                                                "Relaxed leaves more space.\n" +
-                                                               "Use the steering wheel distance button on supported cars.")
+                                                               "Use the steering wheel distance button on supported cars.\n" +
+                                                               "On a Rivian, following distance sets the gap;\n" +
+                                                               "this sets only the gas and brake feel.")
     self._experimental_btn = BigToggle("experimental mode", description_icon=gui_app.texture("icons_mici/experimental_mode.png", 64, 64),
                                        initial_state=ui_state.params.get_bool("ExperimentalMode"), toggle_callback=self._on_experimental_mode,
                                        description="Let the driving model control gas and brakes.\n" +
@@ -56,11 +58,27 @@ class TogglesLayoutMici(NavScroller):
                                                    "The path colors show acceleration and braking.")
     # left out on a prebuilt whose params library does not know the setting yet
     try:
+      self._follow_distance_toggle = BigMultiParamToggle("following distance", "RivianFollowDistance", ["closer", "close", "medium", "far"],
+                                                         description="How far behind the car ahead it follows.\n" +
+                                                                     "Medium is the old Aggressive gap.\n" +
+                                                                     "Closer and Close also react faster to braking.\n" +
+                                                                     "Roll the right scroll wheel up for farther,\n" +
+                                                                     "down for closer, while engaged or stopped.\n" +
+                                                                     "Rivian with sunnypilot longitudinal only.")
+      self._follow_distance_toggle.set_visible(False)  # shown once CarParams say Rivian with longitudinal control
+    except UnknownKeyName:
+      self._follow_distance_toggle = None
+    self._follow_distance = ui_state.follow_distance
+    try:
       self._traffic_mode_toggle = BigParamControl("traffic mode", "TrafficMode",
                                                   description="Shorter gap for stop-and-go traffic.\n" +
-                                                              "About 0.5 s when nearly stopped, 1.0 s from 11 mph.\n" +
-                                                              "Stays at 1.0 s at every speed until turned off.\n" +
-                                                              "Ignores the following distance offset.\n" +
+                                                              "About 0.6 s when nearly stopped, 0.8 s at 11-20 mph,\n" +
+                                                              "0.9 s at 30 mph, 1.0 s from 40 mph up as before.\n" +
+                                                              "Moves off sooner when the car ahead creeps away\n" +
+                                                              "and follows one that only inches forward.\n" +
+                                                              "Accelerates gently (1.5 m/s^2 up to 30 mph).\n" +
+                                                              "Reacts sooner when the car ahead brakes.\n" +
+                                                              "Never farther back than following distance.\n" +
                                                               "Hold the right scroll wheel in 1 s to toggle,\n" +
                                                               "or tap the T on the home screen when off-road.\n" +
                                                               "Stays on or off until you change it.")
@@ -69,15 +87,35 @@ class TogglesLayoutMici(NavScroller):
     self._traffic_mode = ui_state.traffic_mode
     try:
       self._launch_assist_toggle = BigParamControl("launch assist", "RivianLaunchAssist",
-                                                   description="Starts moving sooner when the stopped car ahead pulls away.\n" +
-                                                               "Briefly requests 0.5 m/s^2 to clear the dead zone.\n" +
-                                                               "Then eases back to the normal plan.\n" +
-                                                               "Acceleration is unchanged once moving.\n" +
-                                                               "May also follow a car that only inches forward.\n" +
+                                                   description="Quicker start when the stopped car ahead pulls away.\n" +
+                                                               "Until the truck is under way it asks for as much\n" +
+                                                               "as that car pulls away with, never faster than it.\n" +
+                                                               "With no car ahead, a smaller lift if the model plans it.\n" +
+                                                               "Eases out if the radar loses or swaps that car.\n" +
+                                                               "Behind a car: not in traffic mode, and not\n" +
+                                                               "after stopping closer than 11 ft. May end\n" +
+                                                               "up to about 2 ft closer to a car that pulls\n" +
+                                                               "away and then stops at once.\n" +
                                                                "Rivian with sunnypilot longitudinal only.")
       self._launch_assist_toggle.set_visible(False)  # shown once CarParams say Rivian with longitudinal control
     except UnknownKeyName:
       self._launch_assist_toggle = None
+    # Launch Assist Strength, next to it and only while it is on
+    self._launch_boost_toggle = None
+    if self._launch_assist_toggle is not None:
+      try:
+        self._launch_boost_toggle = BigMultiParamToggle("launch assist strength", "RivianLaunchAssistBoost", ["gentle", "strong"],
+                                                        description="How hard launch assist may pull.\n" +
+                                                                    "Strong: up to 0.8 m/s^2 behind a car (aggressive),\n" +
+                                                                    "0.7 standard, 0.6 relaxed; 0.6 / 0.5 / 0.4 with none.\n" +
+                                                                    "Gentle: 0.1 m/s^2 less in each case,\n" +
+                                                                    "up to about 0.1 s slower behind a brisk car.\n" +
+                                                                    "In traffic mode only with no car ahead.\n" +
+                                                                    "Only while launch assist is on.")
+        self._launch_boost_toggle.set_visible(False)  # shown once CarParams say Rivian with longitudinal control
+        self._launch_boost_toggle.set_enabled(lambda: self._launch_assist_toggle._checked)
+      except UnknownKeyName:
+        self._launch_boost_toggle = None
     try:
       self._curve_speed_toggle = BigParamControl("curve speed control", "CurveSpeedControl",
                                                  description="Slows down ahead of curves from the model's path.\n" +
@@ -108,8 +146,10 @@ class TogglesLayoutMici(NavScroller):
     self._scroller.add_widgets([
       self._personality_toggle,
       self._experimental_btn,
+      *([self._follow_distance_toggle] if self._follow_distance_toggle is not None else []),
       *([self._traffic_mode_toggle] if self._traffic_mode_toggle is not None else []),
       *([self._launch_assist_toggle] if self._launch_assist_toggle is not None else []),
+      *([self._launch_boost_toggle] if self._launch_boost_toggle is not None else []),
       *([self._curve_speed_toggle] if self._curve_speed_toggle is not None else []),
       is_metric_toggle,
       ldw_toggle,
@@ -156,6 +196,11 @@ class TogglesLayoutMici(NavScroller):
       self._traffic_mode = ui_state.traffic_mode
       self._traffic_mode_toggle.set_checked(self._traffic_mode)
 
+    # and Following Distance changes: the right scroll wheel, sunnylink
+    if self._follow_distance_toggle is not None and ui_state.follow_distance != self._follow_distance:
+      self._follow_distance = ui_state.follow_distance
+      self._follow_distance_toggle.set_value(self._follow_distance_toggle._options[self._follow_distance])
+
   def show_event(self):
     super().show_event()
     self._update_toggles()
@@ -176,14 +221,25 @@ class TogglesLayoutMici(NavScroller):
         ui_state.params.remove("ExperimentalMode")
       if self._traffic_mode_toggle is not None:
         self._traffic_mode_toggle.set_visible(ui_state.has_longitudinal_control)
+      if self._follow_distance_toggle is not None:
+        self._follow_distance_toggle.set_visible(ui_state.has_longitudinal_control and ui_state.CP.brand == "rivian")
       if self._launch_assist_toggle is not None:
         self._launch_assist_toggle.set_visible(ui_state.has_longitudinal_control and ui_state.CP.brand == "rivian")
+      if self._launch_boost_toggle is not None:
+        self._launch_boost_toggle.set_visible(ui_state.has_longitudinal_control and ui_state.CP.brand == "rivian")
       if self._curve_speed_toggle is not None:
         self._curve_speed_toggle.set_visible(ui_state.has_longitudinal_control)
 
     # Refresh toggles from params to mirror external changes
     for key, item in self._refresh_toggles:
       item.set_checked(ui_state.params.get_bool(key))
+    if self._follow_distance_toggle is not None:
+      self._follow_distance = ui_state.follow_distance
+      self._follow_distance_toggle.set_value(self._follow_distance_toggle._options[self._follow_distance])
+    if self._launch_boost_toggle is not None:
+      # Strong unless set to Gentle (0), also when never written
+      gentle = ui_state.params.get("RivianLaunchAssistBoost", return_default=True) == 0
+      self._launch_boost_toggle.set_value(self._launch_boost_toggle._options[0 if gentle else 1])
 
   def _on_experimental_mode(self, state: bool):
     if state and not ui_state.params.get_bool("ExperimentalModeConfirmed"):

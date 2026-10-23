@@ -11,6 +11,7 @@ from opendbc.car.structs import car
 from openpilot.common.params import Params, UnknownKeyName
 from openpilot.selfdrive.ui.sunnypilot.layouts.settings.display import OnroadBrightness
 from openpilot.sunnypilot.models.helpers import ACTIVE_BUNDLE_KEYS, get_active_source
+from openpilot.sunnypilot.selfdrive.controls.lib import follow_distance
 from openpilot.sunnypilot.sunnylink.sunnylink_state import SunnylinkState
 from openpilot.system.ui.lib.application import gui_app
 from openpilot.system.ui.sunnypilot.widgets.screen_saver import ScreenSaverSP
@@ -64,6 +65,7 @@ class UIStateSP:
     self.custom_torque_params: bool = False
     self.torque_override_enabled: bool = False
     self.traffic_mode: bool = False
+    self.follow_distance: int = follow_distance.DEFAULT
     self._sp_initialized: bool = False
 
   def update(self) -> None:
@@ -184,6 +186,11 @@ class UIStateSP:
     except UnknownKeyName:
       # a prebuilt whose params library does not know the setting yet: off, and this worker keeps running
       self.traffic_mode = False
+    try:
+      self.follow_distance = follow_distance.sanitize(self.params.get(follow_distance.PARAM, return_default=True))
+    except UnknownKeyName:
+      # a prebuilt whose params library does not know the setting yet: Medium, as selfdrived and plannerd use
+      self.follow_distance = follow_distance.DEFAULT
     self.true_v_ego_ui = self.params.get_bool("TrueVEgoUI")
     self.turn_signals = self.params.get_bool("ShowTurnSignals")
     self.boot_offroad_mode = self.params.get("DeviceBootMode", return_default=True)

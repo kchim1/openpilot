@@ -400,7 +400,9 @@ class BigMultiParamToggle(BigMultiToggle):
     self._load_value()
 
   def _load_value(self):
-    self.set_value(self._options[self._params.get(self._param) or 0])
+    # the nearest option for a stored value out of range (a hand edit, a raw sunnylink write, a backup from a build with more
+    # options): indexing with it raised while the settings were built, at UI start
+    self.set_value(self._options[min(max(int(self._params.get(self._param) or 0), 0), len(self._options) - 1)])
 
   def _handle_mouse_release(self, mouse_pos: MousePos):
     super()._handle_mouse_release(mouse_pos)
