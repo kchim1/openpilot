@@ -335,6 +335,8 @@ struct LongitudinalPlanSP @0xf35cc4560bbf6ec2 {
     tFollow @1 :Float32;     # follow time passed to the MPC this frame (s)
     offsetPct @2 :Float32;   # SPFollowingTimeOffset applied (%), 0 while Traffic Mode is on
     jerkFactor @3 :Float32;
+    level @4 :Int8 = -1;      # RivianFollowDistance in use (0 Closer, 1 Close, 2 Medium, 3 Far); -1: the personality sets the gap
+    tFollowBase @5 :Float32;  # follow time before the offset, eased toward the level's (s); Rivian wheel only
   }
 }
 
@@ -386,6 +388,10 @@ struct OnroadEventSP @0xda96579883444c35 {
     bigModelReady @25;
     trafficModeOn @26;
     trafficModeOff @27;
+    followDistanceCloser @28;
+    followDistanceClose @29;
+    followDistanceMedium @30;
+    followDistanceFar @31;
   }
 }
 

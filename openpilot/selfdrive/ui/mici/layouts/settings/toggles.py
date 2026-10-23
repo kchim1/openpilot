@@ -46,7 +46,9 @@ class TogglesLayoutMici(NavScroller):
                                                    description="Standard is recommended.\n" +
                                                                "Aggressive follows closer, with firmer gas and braking.\n" +
                                                                "Relaxed leaves more space.\n" +
-                                                               "Use the steering wheel distance button on supported cars.")
+                                                               "Use the steering wheel distance button on supported cars.\n" +
+                                                               "On a Rivian, following distance sets the gap;\n" +
+                                                               "this sets only the gas and brake feel.")
     self._experimental_btn = BigToggle("experimental mode", description_icon=gui_app.texture("icons_mici/experimental_mode.png", 64, 64),
                                        initial_state=ui_state.params.get_bool("ExperimentalMode"), toggle_callback=self._on_experimental_mode,
                                        description="Let the driving model control gas and brakes.\n" +
@@ -55,6 +57,17 @@ class TogglesLayoutMici(NavScroller):
                                                    "These are alpha features. Expect mistakes.\n" +
                                                    "The path colors show acceleration and braking.")
     # left out on a prebuilt whose params library does not know the setting yet
+    try:
+      self._follow_distance_toggle = BigMultiParamToggle("following distance", "RivianFollowDistance", ["closer", "close", "medium", "far"],
+                                                         description="How far behind the car ahead it follows.\n" +
+                                                                     "Medium is the old Aggressive gap.\n" +
+                                                                     "Roll the right scroll wheel up for farther,\n" +
+                                                                     "down for closer, while engaged or stopped.\n" +
+                                                                     "Rivian with sunnypilot longitudinal only.")
+      self._follow_distance_toggle.set_visible(False)  # shown once CarParams say Rivian with longitudinal control
+    except UnknownKeyName:
+      self._follow_distance_toggle = None
+    self._follow_distance = ui_state.follow_distance
     try:
       self._traffic_mode_toggle = BigParamControl("traffic mode", "TrafficMode",
                                                   description="Shorter gap for stop-and-go traffic.\n" +
@@ -108,6 +121,7 @@ class TogglesLayoutMici(NavScroller):
     self._scroller.add_widgets([
       self._personality_toggle,
       self._experimental_btn,
+      *([self._follow_distance_toggle] if self._follow_distance_toggle is not None else []),
       *([self._traffic_mode_toggle] if self._traffic_mode_toggle is not None else []),
       *([self._launch_assist_toggle] if self._launch_assist_toggle is not None else []),
       *([self._curve_speed_toggle] if self._curve_speed_toggle is not None else []),
@@ -156,6 +170,11 @@ class TogglesLayoutMici(NavScroller):
       self._traffic_mode = ui_state.traffic_mode
       self._traffic_mode_toggle.set_checked(self._traffic_mode)
 
+    # and Following Distance changes: the right scroll wheel, sunnylink
+    if self._follow_distance_toggle is not None and ui_state.follow_distance != self._follow_distance:
+      self._follow_distance = ui_state.follow_distance
+      self._follow_distance_toggle.set_value(self._follow_distance_toggle._options[self._follow_distance])
+
   def show_event(self):
     super().show_event()
     self._update_toggles()
@@ -176,6 +195,8 @@ class TogglesLayoutMici(NavScroller):
         ui_state.params.remove("ExperimentalMode")
       if self._traffic_mode_toggle is not None:
         self._traffic_mode_toggle.set_visible(ui_state.has_longitudinal_control)
+      if self._follow_distance_toggle is not None:
+        self._follow_distance_toggle.set_visible(ui_state.has_longitudinal_control and ui_state.CP.brand == "rivian")
       if self._launch_assist_toggle is not None:
         self._launch_assist_toggle.set_visible(ui_state.has_longitudinal_control and ui_state.CP.brand == "rivian")
       if self._curve_speed_toggle is not None:
@@ -184,6 +205,9 @@ class TogglesLayoutMici(NavScroller):
     # Refresh toggles from params to mirror external changes
     for key, item in self._refresh_toggles:
       item.set_checked(ui_state.params.get_bool(key))
+    if self._follow_distance_toggle is not None:
+      self._follow_distance = ui_state.follow_distance
+      self._follow_distance_toggle.set_value(self._follow_distance_toggle._options[self._follow_distance])
 
   def _on_experimental_mode(self, state: bool):
     if state and not ui_state.params.get_bool("ExperimentalModeConfirmed"):

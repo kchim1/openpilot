@@ -187,7 +187,7 @@ class SelfdriveD(CruiseHelper):
 
     self.car_events_sp = CarSpecificEventsSP(self.CP, self.CP_SP)
 
-    CruiseHelper.__init__(self, self.CP)
+    CruiseHelper.__init__(self, self.CP, self.CP_SP)
     self.button_state_tracker = ButtonStateTracker()
 
   def update_events(self, CS):
@@ -518,10 +518,11 @@ class SelfdriveD(CruiseHelper):
     if CS.gearShifter == car.CarState.GearShifter.park and self.mads.enabled:
       self.events.remove(EventName.canBusMissing)
 
-    CruiseHelper.update(self, CS, self.events_sp, self.experimental_mode)
+    CruiseHelper.update(self, CS, self.events_sp, self.experimental_mode, self.enabled)
 
-    # decrement personality on distance button press
-    if self.CP.openpilotLongitudinalControl:
+    # decrement personality on distance button press. Not on a car whose wheel sets the Following Distance: there
+    # gapAdjustCruise is that wheel's step farther
+    if self.CP.openpilotLongitudinalControl and not self.follow_distance_wheel:
       if any(not be.pressed and be.type == ButtonType.gapAdjustCruise for be in CS.buttonEvents):
         if not self.experimental_mode_switched:
           self.personality = (self.personality - 1) % 3
@@ -683,6 +684,7 @@ class SelfdriveD(CruiseHelper):
       self.experimental_mode = self.params.get_bool("ExperimentalMode") and self.CP.openpilotLongitudinalControl
       self.personality = self.params.get("LongitudinalPersonality", return_default=True)
       self.traffic_mode = self.read_traffic_mode()
+      self.read_follow_distance_param(time.monotonic())
 
       self.chestnut_loading = self.params.get_bool("ChestnutLoading")
       self.chestnut_active = self.params.get("ChestnutActive")

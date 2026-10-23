@@ -33,10 +33,13 @@ sections:
     title: Driving Personality
     description: Standard is recommended. In aggressive mode, sunnypilot will follow lead cars closer and be more aggressive
       with the gas and brake. In relaxed mode sunnypilot will stay further away from lead cars. On supported cars, you can
-      cycle through these personalities with your steering wheel distance button. Pulling away from a stop, the gas is
-      also limited by personality, up to about 9 mph, easing back to the normal limit by 27 mph. Aggressive is limited to
-      1.4 m/s², Standard 1.2 and Relaxed 1.0. Before this it was 1.6, or 2.0 when the driving model is in control. Behind
-      a car pulling away it is the same, unless Keep Up With Traffic lifts it.
+      cycle through these personalities with your steering wheel distance button. On a Rivian with sunnypilot
+      longitudinal, Following Distance sets the gap instead and the right scroll wheel changes that; the personality
+      then only sets how firmly it accelerates and brakes, the pull-away limit below and how much Keep Up With Traffic
+      adds. Pulling away from a stop, the gas is also limited by personality, up to about 9 mph, easing back to the
+      normal limit by 27 mph. Aggressive is limited to 1.4 m/s², Standard 1.2 and Relaxed 1.0. Before this it was 1.6,
+      or 2.0 when the driving model is in control. Behind a car pulling away it is the same, unless Keep Up With Traffic
+      lifts it.
     options:
     - value: 0
       label: Aggressive
@@ -46,11 +49,36 @@ sections:
       label: Relaxed
     enablement:
     - $ref: '#/macros/longitudinal'
+  - key: RivianFollowDistance
+    widget: multiple_button
+    title: Following Distance
+    description: 'How far behind the car ahead sunnypilot follows: Closer 1.00 s, Close 1.10 s, Medium 1.25 s (the gap
+      Aggressive had) and Far 1.45 s (Standard''s), before the Following Distance Offset. With the offset at -10%,
+      at 65 mph that is about 105, 114, 127 and 144 ft. Roll the right scroll wheel up for farther and down for closer
+      while sunnypilot is engaged or the truck is stopped; it stops at Closer and Far, and each notch shows the distance
+      on the screen. Each step eases in over 1 to 2 seconds. Traffic Mode keeps its own shorter gap but never follows
+      farther back than this. The Driving Personality still sets how firmly it accelerates and brakes. Rivian with
+      sunnypilot longitudinal only. Can be changed while driving.'
+    options:
+    - value: 0
+      label: Closer
+    - value: 1
+      label: Close
+    - value: 2
+      label: Medium
+    - value: 3
+      label: Far
+    visibility:
+    - type: capability
+      field: brand
+      equals: rivian
+    enablement:
+    - $ref: '#/macros/longitudinal'
   - key: SPFollowingTimeOffset
     widget: option
     title: Following Distance Offset
-    description: Adjusts the gap to the car ahead in every driving personality, from -10% (closer) to +10% (further)
-      in 2% steps. 0 is no change. With Experimental mode off, on Aggressive at 70 mph each 2% step is about 2.6 ft
+    description: Adjusts the gap to the car ahead in every driving personality and Following Distance, from -10%
+      (closer) to +10% (further) in 2% steps. 0 is no change. With Experimental mode off, on Aggressive at 70 mph each 2% step is about 2.6 ft
       (10% is about 13 ft). In Experimental mode the driving model can keep its own gap, so the change may be smaller
       or not noticeable. Takes effect on the next drive.
     min: -10
@@ -65,7 +93,8 @@ sections:
     widget: toggle
     title: Traffic Mode
     description: 'Shorter gap for stop-and-go traffic: about 0.5 s behind the car ahead when nearly stopped, rising
-      to 1.0 s from about 11 mph and staying at 1.0 s at every speed until turned off (Aggressive is 1.25 s). Ignores
+      to 1.0 s from about 11 mph and staying at 1.0 s at every speed until turned off (Aggressive and Following
+      Distance Medium are 1.25 s; on a Rivian it never follows farther back than Following Distance). Ignores
       Following Distance Offset while on. Press and hold the right scroll wheel on the steering wheel (its middle
       button) for 1 second to toggle, or tap the T on the comma four home screen while the truck is off. Stays on or
       off until you change it.'

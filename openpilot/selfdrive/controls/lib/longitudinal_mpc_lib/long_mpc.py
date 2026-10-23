@@ -273,6 +273,9 @@ class LongitudinalMpc:
     self.launch_assist = False
     # Brake Sooner for Stops, set by the sunnypilot planner while driving (COMFORT_BRAKE: off)
     self.approach_comfort_brake = COMFORT_BRAKE
+    # Rivian Following Distance, set by the sunnypilot planner while driving: the follow time before the offset, in
+    # place of the personality's. None: the personality's
+    self.follow_t_base = None
     # follow time and jerk factor last passed to the solver, for logging
     self.t_follow = get_T_FOLLOW()
     self.jerk_factor = get_jerk_factor()
@@ -397,6 +400,11 @@ class LongitudinalMpc:
     return 0. if self.traffic_mode else clip_t_follow_offset_pct(self.t_follow_offset_pct)
 
   def get_t_follow(self, personality=log.LongitudinalPersonality.standard):
+    if self.follow_t_base is not None:
+      # Rivian Following Distance: the level's follow time with the offset. Traffic Mode keeps its curve, but never
+      # follows further back than that (Closer and Close at a -10% offset are 0.90 and 0.99 s, under its 1.0 s)
+      t_follow = self.follow_t_base * (1 + clip_t_follow_offset_pct(self.t_follow_offset_pct) / 100)
+      return min(get_traffic_mode_T_FOLLOW(self.x0[1]), t_follow) if self.traffic_mode else t_follow
     if self.traffic_mode:
       # x0 holds the speed the planner just passed to set_cur_state()
       return get_traffic_mode_T_FOLLOW(self.x0[1])

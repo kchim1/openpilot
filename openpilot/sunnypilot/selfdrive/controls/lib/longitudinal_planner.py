@@ -9,12 +9,14 @@ from openpilot.cereal import messaging, custom, log
 from opendbc.car import structs
 from openpilot.common.constants import CV
 from openpilot.common.params import Params, UnknownKeyName
+from openpilot.common.realtime import DT_MDL
 from openpilot.common.swaglog import cloudlog
 from openpilot.selfdrive.car.cruise import V_CRUISE_MAX
 import numpy as np
 
 from openpilot.selfdrive.controls.lib.longitudinal_mpc_lib.long_mpc import COMFORT_BRAKE, STOP_DISTANCE, clip_t_follow_offset_pct, \
   get_safe_obstacle_distance, get_stopped_equivalence_factor
+from openpilot.sunnypilot.selfdrive.controls.lib import follow_distance
 from openpilot.sunnypilot.selfdrive.controls.lib.dec.dec import DynamicExperimentalController
 from openpilot.sunnypilot.selfdrive.controls.lib.e2e_alerts_helper import E2EAlertsHelper
 from openpilot.sunnypilot.selfdrive.controls.lib.red_light_stop import RedLightStop
@@ -118,6 +120,8 @@ class LongitudinalPlannerSP:
     self._keep_pace_error_logged = False
     self._keep_pace_frames = 0
     self._keep_pace_share = 0.
+    # Rivian Following Distance (the right thumb wheel), in place of the personality's follow time. None everywhere else
+    self.follow_distance = follow_distance.FollowDistance(self._params) if follow_distance.available(CP, CP_SP) else None
 
     # Following distance offset, read once per drive (plannerd restarts on every onroad transition)
     if CP.openpilotLongitudinalControl:
@@ -262,6 +266,8 @@ class LongitudinalPlannerSP:
   def update(self, sm: messaging.SubMaster) -> None:
     self.events_sp.clear()
     self.update_traffic_mode()
+    if self.follow_distance is not None:
+      self._mpc.follow_t_base = self.follow_distance.update(self._params, sm['carControl'].longActive, DT_MDL)
     self.update_launch_assist()
     self.red_light_stop.update_offset()
     self.update_keep_pace()
@@ -345,5 +351,8 @@ class LongitudinalPlannerSP:
     followDistance.tFollow = float(self._mpc.t_follow)
     followDistance.offsetPct = float(self._mpc.get_t_follow_offset_pct())
     followDistance.jerkFactor = float(self._mpc.jerk_factor)
+    if self.follow_distance is not None:
+      followDistance.level = self.follow_distance.level
+      followDistance.tFollowBase = float(self.follow_distance.t_base)
 
     pm.send('longitudinalPlanSP', plan_sp_send)

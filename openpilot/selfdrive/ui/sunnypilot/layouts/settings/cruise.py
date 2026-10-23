@@ -29,12 +29,13 @@ ACC_ENABLED_DESCRIPTION = tr_noop("Enable custom Short & Long press increments f
 ACC_NOLONG_DESCRIPTION = tr_noop("This feature can only be used with sunnypilot longitudinal control enabled.")
 ACC_PCMCRUISE_DISABLED_DESCRIPTION = tr_noop("This feature is not supported on this platform due to vehicle limitations.")
 ONROAD_ONLY_DESCRIPTION = tr_noop("Start the vehicle to check vehicle compatibility.")
-FOLLOWING_TIME_OFFSET_DESCRIPTION = tr_noop("Adjusts the gap to the car ahead in every driving personality, " +
+FOLLOWING_TIME_OFFSET_DESCRIPTION = tr_noop("Adjusts the gap to the car ahead in every driving personality and Following Distance, " +
                                             "from -10% (closer) to +10% (further). In Experimental mode the driving model " +
                                             "can keep its own gap, so the change may be smaller. Takes effect on the next drive.")
 TRAFFIC_MODE_DESCRIPTION = tr_noop("Shorter gap for stop-and-go traffic: about 0.5 s behind the car ahead when nearly stopped, " +
                                    "rising to 1.0 s from about 11 mph and staying at 1.0 s at every speed until turned off " +
-                                   "(Aggressive is 1.25 s). Ignores Following Distance Offset while on. Press and hold the right " +
+                                   "(Aggressive and Following Distance Medium are 1.25 s; on a Rivian it never follows farther back " +
+                                   "than Following Distance). Ignores Following Distance Offset while on. Press and hold the right " +
                                    "scroll wheel on the steering wheel (its middle button) for 1 second to toggle. Stays on or off " +
                                    "until you change it.")
 CURVE_SPEED_CONTROL_DESCRIPTION = tr_noop("Slow down ahead of curves and power smoothly through them. Also slows and eases off the " +

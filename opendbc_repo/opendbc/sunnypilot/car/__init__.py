@@ -12,6 +12,14 @@ from opendbc.car import structs
 # Rivian branches (gerrylum fix/stg-*) already send those for the ACC stalk.
 TRAFFIC_MODE_BUTTON = structs.CarState.ButtonEvent.Type.leftBlinker
 
+# A car port whose distance control has a direction (Rivian: the right thumb wheel) sends one of these per notch, and
+# selfdrived steps the Following Distance setting. ButtonEvent.Type has no values with a direction (and car.capnp can't
+# change under the prebuilt): farther is gapAdjustCruise, closer is rightBlinker, which no car port sends as a button
+# event and nothing reacts to. Other brands' distance buttons send gapAdjustCruise and keep cycling the personality:
+# selfdrived only treats these as steps on a car with the wheel
+FOLLOW_DISTANCE_FARTHER_BUTTON = structs.CarState.ButtonEvent.Type.gapAdjustCruise
+FOLLOW_DISTANCE_CLOSER_BUTTON = structs.CarState.ButtonEvent.Type.rightBlinker
+
 
 def crc8_pedal(data):
   crc = 0xFF    # standard init value

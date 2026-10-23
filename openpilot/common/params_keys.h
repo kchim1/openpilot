@@ -330,4 +330,8 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     // Rivian Launch Assist (sunnypilot longitudinal): a short 0.5 m/s^2 floor when a stopped radar lead
     // pulls away, to get past the VDM standstill dead zone. controlsd and plannerd re-read it about once a second.
     {"RivianLaunchAssist", {PERSISTENT | BACKUP, BOOL, "0"}},
+    // Rivian Following Distance (sunnypilot longitudinal, harness upgrade): 0 Closer, 1 Close, 2 Medium, 3 Far = 1.00,
+    // 1.10, 1.25, 1.45 s before SPFollowingTimeOffset, instead of the personality's follow time. Stepped by the right
+    // thumb wheel (up = farther) while engaged or stopped; plannerd re-reads it every 0.25 s.
+    {"RivianFollowDistance", {PERSISTENT | BACKUP, INT, "2"}},
 };
