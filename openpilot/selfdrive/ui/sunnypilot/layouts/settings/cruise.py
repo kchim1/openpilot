@@ -40,7 +40,7 @@ TRAFFIC_MODE_DESCRIPTION = tr_noop("Shorter gap for stop-and-go traffic: about 0
                                    "it reacts sooner when the car ahead brakes. Its own gap ignores Following Distance Offset, but " +
                                    "on a Rivian it never follows farther back than Following Distance with the offset. Press and " +
                                    "hold the right scroll wheel on the steering wheel (its middle button) for 1 second to toggle. " +
-                                   "Stays on or off until you change it.")
+                                   "Turns off at the end of every drive and when the device restarts.")
 CURVE_SPEED_CONTROL_DESCRIPTION = tr_noop("Slow down ahead of curves and power smoothly through them. Also slows and eases off the " +
                                           "gas when cornering nears what the steering can hold. Uses the vision path; no map data " +
                                           "required.")

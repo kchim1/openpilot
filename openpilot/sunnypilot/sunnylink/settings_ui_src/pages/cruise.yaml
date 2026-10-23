@@ -105,8 +105,8 @@ sections:
       waiting for the smoothed estimate. Its own gap ignores the Following Distance Offset,
       but on a Rivian it never follows farther back than Following Distance with the offset (at -10%, Closer is 0.90 s
       from 30 mph and Close 0.99 s from 39 mph). Press and hold the right scroll wheel on the steering wheel (its middle
-      button) for 1 second to toggle, or tap the T on the comma four home screen while the truck is off. Stays on or
-      off until you change it.'
+      button) for 1 second to toggle, or tap the T on the comma four home screen while the truck is off. Turns off at
+      the end of every drive and when the comma four restarts.'
     enablement:
     - $ref: '#/macros/longitudinal'
   - key: RedLightStopDistance

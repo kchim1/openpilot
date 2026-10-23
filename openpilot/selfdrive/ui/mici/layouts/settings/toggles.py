@@ -81,7 +81,7 @@ class TogglesLayoutMici(NavScroller):
                                                               "Never farther back than following distance.\n" +
                                                               "Hold the right scroll wheel in 1 s to toggle,\n" +
                                                               "or tap the T on the home screen when off-road.\n" +
-                                                              "Stays on or off until you change it.")
+                                                              "Turns off at the end of every drive.")
     except UnknownKeyName:
       self._traffic_mode_toggle = None
     self._traffic_mode = ui_state.traffic_mode
