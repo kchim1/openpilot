@@ -285,7 +285,8 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     // Read by the sunnypilot longitudinal planner at the start of each drive.
     {"SPFollowingTimeOffset", {PERSISTENT | BACKUP, INT, "0"}},
 
-    // Traffic Mode: shorter follow time for stop-and-go traffic, ignores SPFollowingTimeOffset while on.
+    // Traffic Mode: shorter follow time for stop-and-go traffic, ignores SPFollowingTimeOffset while on (a Rivian's
+    // RivianFollowDistance with the offset still caps it).
     // Switchable while driving (plannerd re-reads it every 0.25 s); stays as set across drives and reboots.
     {"TrafficMode", {PERSISTENT | BACKUP, BOOL, "0"}},
 

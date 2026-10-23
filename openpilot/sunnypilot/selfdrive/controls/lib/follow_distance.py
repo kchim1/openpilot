@@ -17,6 +17,8 @@ PARAM = "RivianFollowDistance"
 NAMES = ("Closer", "Close", "Medium", "Far")
 T_FOLLOW = (1.00, 1.10, 1.25, 1.45)  # s
 DEFAULT = 2                          # Medium
+FAST_LEAD_LEVELS = (0, 1)            # Closer and Close, under Medium's gap: plannerd also uses its faster estimate of the lead's
+                                     # acceleration (fast_lead_accel.py)
 RAMP_RATE = 0.1                      # s of follow time per s while openpilot controls the speed: a level in 1 to 2 s
 READ_FRAMES = 5                      # plannerd runs at 20 Hz: re-read the level every 0.25 s
 

@@ -333,10 +333,12 @@ struct LongitudinalPlanSP @0xf35cc4560bbf6ec2 {
   struct FollowDistance {
     trafficMode @0 :Bool;
     tFollow @1 :Float32;     # follow time passed to the MPC this frame (s)
-    offsetPct @2 :Float32;   # SPFollowingTimeOffset applied (%), 0 while Traffic Mode is on
+    offsetPct @2 :Float32;   # SPFollowingTimeOffset applied (%); in Traffic Mode 0 unless a Rivian level with it is closer than its curve
     jerkFactor @3 :Float32;
     level @4 :Int8 = -1;      # RivianFollowDistance in use (0 Closer, 1 Close, 2 Medium, 3 Far); -1: the personality sets the gap
     tFollowBase @5 :Float32;  # follow time before the offset, eased toward the level's (s); Rivian wheel only
+    trafficModeShift @6 :Float32;  # how much farther Traffic Mode put leadOne's obstacle this frame: its launch shift (m)
+    aLeadFast @7 :Float32;         # leadOne acceleration the MPC used from the fast estimate (m/s^2); 0: aLeadK, as radard sent
   }
 }
 

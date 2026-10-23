@@ -19,6 +19,7 @@ from openpilot.selfdrive.controls.lib.longitudinal_mpc_lib.long_mpc import COMFO
 from openpilot.sunnypilot.selfdrive.controls.lib import follow_distance
 from openpilot.sunnypilot.selfdrive.controls.lib.dec.dec import DynamicExperimentalController
 from openpilot.sunnypilot.selfdrive.controls.lib.e2e_alerts_helper import E2EAlertsHelper
+from openpilot.sunnypilot.selfdrive.controls.lib.fast_lead_accel import FastLeadAccel
 from openpilot.sunnypilot.selfdrive.controls.lib.red_light_stop import RedLightStop
 from openpilot.sunnypilot.selfdrive.controls.lib.stop_behind_lead import StopBehindLead
 from openpilot.sunnypilot.selfdrive.controls.lib.smart_cruise_control.smart_cruise_control import SmartCruiseControl
@@ -122,6 +123,8 @@ class LongitudinalPlannerSP:
     self._keep_pace_share = 0.
     # Rivian Following Distance (the right thumb wheel), in place of the personality's follow time. None everywhere else
     self.follow_distance = follow_distance.FollowDistance(self._params) if follow_distance.available(CP, CP_SP) else None
+    # leadOne's acceleration from the radar's raw lead speed, sooner than aLeadK: in Traffic Mode and at Closer
+    self.fast_lead_accel = FastLeadAccel()
 
     # Following distance offset, read once per drive (plannerd restarts on every onroad transition)
     if CP.openpilotLongitudinalControl:
@@ -268,6 +271,9 @@ class LongitudinalPlannerSP:
     self.update_traffic_mode()
     if self.follow_distance is not None:
       self._mpc.follow_t_base = self.follow_distance.update(self._params, sm['carControl'].longActive, DT_MDL)
+    close_level = self.follow_distance is not None and self.follow_distance.level in follow_distance.FAST_LEAD_LEVELS
+    self._mpc.a_lead_fast = self.fast_lead_accel.update(sm['radarState'].leadOne, sm['carState'].vEgo, sm['carControl'].longActive,
+                                                        self._mpc.traffic_mode, close_level)
     self.update_launch_assist()
     self.red_light_stop.update_offset()
     self.update_keep_pace()
@@ -351,6 +357,8 @@ class LongitudinalPlannerSP:
     followDistance.tFollow = float(self._mpc.t_follow)
     followDistance.offsetPct = float(self._mpc.get_t_follow_offset_pct())
     followDistance.jerkFactor = float(self._mpc.jerk_factor)
+    followDistance.trafficModeShift = float(self._mpc.launch_shift)
+    followDistance.aLeadFast = float(self._mpc.a_lead_fast or 0.)
     if self.follow_distance is not None:
       followDistance.level = self.follow_distance.level
       followDistance.tFollowBase = float(self.follow_distance.t_base)

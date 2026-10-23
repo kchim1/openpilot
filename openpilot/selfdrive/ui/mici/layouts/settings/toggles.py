@@ -61,6 +61,7 @@ class TogglesLayoutMici(NavScroller):
       self._follow_distance_toggle = BigMultiParamToggle("following distance", "RivianFollowDistance", ["closer", "close", "medium", "far"],
                                                          description="How far behind the car ahead it follows.\n" +
                                                                      "Medium is the old Aggressive gap.\n" +
+                                                                     "Closer and Close also react faster to braking.\n" +
                                                                      "Roll the right scroll wheel up for farther,\n" +
                                                                      "down for closer, while engaged or stopped.\n" +
                                                                      "Rivian with sunnypilot longitudinal only.")
@@ -71,9 +72,13 @@ class TogglesLayoutMici(NavScroller):
     try:
       self._traffic_mode_toggle = BigParamControl("traffic mode", "TrafficMode",
                                                   description="Shorter gap for stop-and-go traffic.\n" +
-                                                              "About 0.5 s when nearly stopped, 1.0 s from 11 mph.\n" +
-                                                              "Stays at 1.0 s at every speed until turned off.\n" +
-                                                              "Ignores the following distance offset.\n" +
+                                                              "About 0.6 s when nearly stopped, 0.8 s at 11-20 mph,\n" +
+                                                              "0.9 s at 30 mph, 1.0 s from 40 mph up as before.\n" +
+                                                              "Moves off sooner when the car ahead creeps away\n" +
+                                                              "and follows one that only inches forward.\n" +
+                                                              "Accelerates gently (1.5 m/s^2 up to 30 mph).\n" +
+                                                              "Reacts sooner when the car ahead brakes.\n" +
+                                                              "Never farther back than following distance.\n" +
                                                               "Hold the right scroll wheel in 1 s to toggle,\n" +
                                                               "or tap the T on the home screen when off-road.\n" +
                                                               "Stays on or off until you change it.")

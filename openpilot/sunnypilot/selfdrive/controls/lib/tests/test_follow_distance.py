@@ -110,10 +110,10 @@ class TestFollowTime(OpenpilotTestCase):
     mpc = LongitudinalMpc()
     mpc.traffic_mode = True
     mpc.t_follow_offset_pct = -10
-    # Closer, Close, Medium and Far at each speed: Closer (0.90 s) is under the curve from 4 m/s (9 mph), Close (0.99 s)
-    # from 4.9 m/s (11 mph)
-    for v_ego, expected in ((0., (0.5, 0.5, 0.5, 0.5)), (2.5, (0.75, 0.75, 0.75, 0.75)), (4.5, (0.9, 0.95, 0.95, 0.95)),
-                            (5., (0.9, 0.99, 1.0, 1.0)), (30., (0.9, 0.99, 1.0, 1.0))):
+    # Closer, Close, Medium and Far at each speed: Closer (0.90 s) is under the curve from 13.41 m/s (30 mph), Close
+    # (0.99 s) from 17.43 m/s (39 mph)
+    for v_ego, expected in ((0., (0.6, 0.6, 0.6, 0.6)), (5., (0.8, 0.8, 0.8, 0.8)), (13.41, (0.9, 0.9, 0.9, 0.9)),
+                            (15.645, (0.9, 0.95, 0.95, 0.95)), (17.88, (0.9, 0.99, 1.0, 1.0)), (30., (0.9, 0.99, 1.0, 1.0))):
       for t, t_expected in zip(T_FOLLOW, expected, strict=True):
         mpc.follow_t_base = t
         run_mpc(mpc, v_ego, Personality.standard)
@@ -238,10 +238,10 @@ class TestFollowDistancePlanner(OpenpilotTestCase):
   def test_traffic_mode_on_each_level(self):
     self.params.put("SPFollowingTimeOffset", -10, block=True)
     self.params.put_bool("TrafficMode", True, block=True)
-    # at 0, 2.5, 4.5 and 10 m/s: Traffic Mode's curve, never above Closer's 0.90 s or Close's 0.99 s
-    for level, expected in enumerate(((0.5, 0.75, 0.9, 0.9), (0.5, 0.75, 0.95, 0.99), (0.5, 0.75, 0.95, 1.0), (0.5, 0.75, 0.95, 1.0))):
+    # at 0, 5, 15 and 20 m/s: Traffic Mode's curve, never above Closer's 0.90 s or Close's 0.99 s
+    for level, expected in enumerate(((0.6, 0.8, 0.9, 0.9), (0.6, 0.8, 0.936, 0.99), (0.6, 0.8, 0.936, 1.0), (0.6, 0.8, 0.936, 1.0))):
       self.params.put(PARAM, level, block=True)
-      for v_ego, t_expected in zip((0., 2.5, 4.5, 10.), expected, strict=True):
+      for v_ego, t_expected in zip((0., 5., 15., 20.), expected, strict=True):
         planner = LongitudinalPlanner(*car_params(), init_v=v_ego)
         sm, pm = build_sm(v_ego), MockPubMaster()
         for _ in range(TRAFFIC_MODE_READ_FRAMES):
@@ -253,6 +253,10 @@ class TestFollowDistancePlanner(OpenpilotTestCase):
         assert abs(t_follow - t_expected) < 0.01, (level, v_ego)
         fd = pm.sent['longitudinalPlanSP'][-1].longitudinalPlanSP.followDistance
         assert fd.trafficMode and fd.level == level
+        # the offset is logged where it sets the gap: the level with it closer than the curve (Closer from 15 m/s, Close at 20)
+        level_closer = T_FOLLOW[level] * (1 + -10 / 100) < get_traffic_mode_T_FOLLOW(planner.mpc.x0[1])
+        assert fd.offsetPct == (-10. if level_closer else 0.), (level, v_ego)
+        assert level_closer == ((level, v_ego) in ((0, 15.), (0, 20.), (1, 20.)))
 
   def test_other_cars_unchanged_and_not_logged(self):
     for kwargs in ({"brand": "toyota"}, {"harness": False}):

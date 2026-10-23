@@ -94,12 +94,33 @@ def clip_t_follow_offset_pct(offset_pct):
   return float(np.clip(offset_pct, T_FOLLOW_OFFSET_PCT_MIN, T_FOLLOW_OFFSET_PCT_MAX))
 
 # Traffic Mode: a shorter gap for stop-and-go traffic, switched live by the sunnypilot planner.
-# 0.5 s at standstill rising to 1.0 s at 5 m/s (~11 mph), and 1.0 s at every higher speed (Aggressive is 1.25 s).
-# It replaces the personality's follow time and ignores the offset. Only the follow time and the jerk
-# factor change: STOP_DISTANCE, COMFORT_BRAKE, LEAD_DANGER_FACTOR, DANGER_ZONE_COST and the accel limits do not.
-TRAFFIC_MODE_T_FOLLOW_BP = [0., 5.]
-TRAFFIC_MODE_T_FOLLOW_V = [0.5, 1.0]
+# 0.6 s at standstill, 0.8 s from 5 m/s (11 mph) to 8.94 m/s (20 mph), 0.9 s at 13.41 m/s (30 mph) and 1.0 s from 17.88 m/s
+# (40 mph) up, as before there (Aggressive is 1.25 s). It replaces the personality's follow time and ignores the offset,
+# except that a Rivian never follows farther back than its Following Distance with the offset (get_t_follow). From a stop
+# it moves off sooner (TRAFFIC_MODE_LAUNCH_SHIFT) and below 40 mph the planner caps its acceleration (longitudinal_planner.py);
+# COMFORT_BRAKE, LEAD_DANGER_FACTOR, DANGER_ZONE_COST and the solver's accel limits do not change.
+TRAFFIC_MODE_T_FOLLOW_BP = [0., 5., 8.94, 13.41, 17.88]
+TRAFFIC_MODE_T_FOLLOW_V = [0.6, 0.8, 0.8, 0.9, 1.0]
 TRAFFIC_MODE_JERK_FACTOR = 0.5  # same as Aggressive
+# Traffic Mode moves off sooner behind a car that pulls away from a stop. Stop Behind Lead stops the truck about 4 m behind
+# a stopped car, short of the solver's STOP_DISTANCE, so the plan would first wait for that car to open up the difference.
+# Once the plan has stopped (its speed under TRAFFIC_MODE_LAUNCH_SHIFT_V_EGO_BP[0]) behind a radar leadOne, that lead's
+# obstacle moves farther by the room the truck stopped short of STOP_DISTANCE - TRAFFIC_MODE_LAUNCH_SHIFT_MARGIN, at most
+# TRAFFIC_MODE_LAUNCH_SHIFT: it can't pull the truck toward a car that stays put. The gap is the closest the truck comes
+# while stopped, and the room tapers to none for a gap under TRAFFIC_MODE_LAUNCH_SHIFT_GAP_BP[1] (Stop Behind Lead's
+# GAP_MIN), so a truck that ended up close gets less head start, or none. Once the plan
+# moves off it only comes down: the truck's own travel since the stop spends it, and it fades out with the plan's speed,
+# none from TRAFFIC_MODE_LAUNCH_SHIFT_V_EGO_BP[1]. Each stop measures its gap again. It builds up at most
+# TRAFFIC_MODE_LAUNCH_SHIFT_RATE. Another radar track as leadOne, or a vision-only one, gets none until the truck stops
+# behind it; leadTwo gets the same only while it is leadOne's own track. Shifting while moving too ended town stops 1-2 m
+# closer than without it (the truck under-brakes at a crawl and Stop Behind Lead only backstops 4 m of real gap), and a
+# shift kept through a crawl, or the full one after a short stop, closed up an inching queue a little more on every inch,
+# down to contact with Launch Assist, in closed-loop sims. The FCW check stays on the lead itself
+TRAFFIC_MODE_LAUNCH_SHIFT = 2.0                  # m
+TRAFFIC_MODE_LAUNCH_SHIFT_MARGIN = 0.3           # m
+TRAFFIC_MODE_LAUNCH_SHIFT_GAP_BP = [2.5, 3.5]    # m: none for a truck stopped this close, all of it from here
+TRAFFIC_MODE_LAUNCH_SHIFT_V_EGO_BP = [0.1, 1.0]  # m/s
+TRAFFIC_MODE_LAUNCH_SHIFT_RATE = 1.0             # m/s
 
 
 def get_traffic_mode_T_FOLLOW(v_ego):
@@ -112,6 +133,10 @@ LAUNCH_ASSIST_V_LEAD_MIN = 0.3
 LAUNCH_ASSIST_V_LEAD_K_MIN = 0.15  # filtered speed too, so one noisy raw vLead sample can't trigger it
 LAUNCH_ASSIST_A_LEAD_MIN = 0.1
 LAUNCH_ASSIST_A_LEAD_TAU = 0.3
+
+# Fast lead acceleration, set by the sunnypilot planner (fast_lead_accel.py): when it sees leadOne braking sooner than
+# radard's aLeadK does, the MPC plans with its estimate instead, kept up longer (aLeadTau at most this)
+FAST_LEAD_A_TAU = 0.3
 
 # Brake Sooner for Stops, set by the sunnypilot planner: closing on a stopped or slow lead, plan as if the comfort
 # brake were approach_comfort_brake instead of COMFORT_BRAKE, so braking starts sooner and peaks lower. The solver's
@@ -276,6 +301,9 @@ class LongitudinalMpc:
     # Rivian Following Distance, set by the sunnypilot planner while driving: the follow time before the offset, in
     # place of the personality's. None: the personality's
     self.follow_t_base = None
+    # Fast lead acceleration, set by the sunnypilot planner while driving: leadOne's acceleration to plan with in place of
+    # aLeadK. None: aLeadK
+    self.a_lead_fast = None
     # follow time and jerk factor last passed to the solver, for logging
     self.t_follow = get_T_FOLLOW()
     self.jerk_factor = get_jerk_factor()
@@ -289,6 +317,10 @@ class LongitudinalMpc:
     self.x_sol = np.zeros((N+1, X_DIM))
     self.u_sol = np.zeros((N, 1))
     self.approach_margin_last = [0., 0.]  # largest approach margin applied last frame, per lead
+    self.launch_shift = 0.          # Traffic Mode's launch shift applied last frame, to leadOne's obstacle
+    self.launch_shift_track = -1    # leadOne's radar track it is for (-1: none)
+    self.launch_shift_gap = None    # the gap the truck stopped at behind that track (None: not stopped behind it)
+    self.launch_shift_travel = 0.   # how far the plan has moved since that stop (m)
     self.v_solution = np.zeros(N+1)
     self.a_solution = np.zeros(N+1)
     self.j_solution = np.zeros(N)
@@ -351,7 +383,7 @@ class LongitudinalMpc:
     lead_xv = np.column_stack((x_lead_traj, v_lead_traj))
     return lead_xv
 
-  def process_lead(self, lead):
+  def process_lead(self, lead, a_lead_fast=None):
     v_ego = self.x0[1]
     if lead is not None and lead.present:
       x_lead = lead.dRel
@@ -361,6 +393,9 @@ class LongitudinalMpc:
       if self.launch_assist and lead.radar and v_ego < LAUNCH_ASSIST_V_EGO_MAX and v_lead > LAUNCH_ASSIST_V_LEAD_MIN and \
          lead.vLeadK > LAUNCH_ASSIST_V_LEAD_K_MIN and a_lead > LAUNCH_ASSIST_A_LEAD_MIN:
         a_lead_tau = min(a_lead_tau, LAUNCH_ASSIST_A_LEAD_TAU)
+      if a_lead_fast is not None:
+        a_lead = a_lead_fast
+        a_lead_tau = min(a_lead_tau, FAST_LEAD_A_TAU)
     else:
       # Fake a fast lead car, so mpc can keep running in the same mode
       x_lead = 50.0
@@ -377,6 +412,11 @@ class LongitudinalMpc:
     lead_xv = self.extrapolate_lead(x_lead, v_lead, a_lead, a_lead_tau)
     return lead_xv
 
+  def plan_speeds(self):
+    # the solver's v_ego is symbolic: use the last plan's speeds, or the current speed if that plan is stale
+    v_ego = self.x0[1]
+    return self.x_sol[:,1] if abs(self.x_sol[0,1] - v_ego) < 1. else np.full(N+1, v_ego)
+
   def approach_margin(self, idx, lead, lead_xv):
     """Brake Sooner for Stops: how much closer to put this lead's obstacle at each step of the horizon"""
     k = 1 / (2 * self.approach_comfort_brake) - 1 / (2 * COMFORT_BRAKE)
@@ -384,8 +424,7 @@ class LongitudinalMpc:
       self.approach_margin_last[idx] = 0.
       return np.zeros(N+1)
     v_ego = self.x0[1]
-    # the solver's v_ego is symbolic: use the last plan's speeds, or the current speed if that plan is stale
-    v_plan = self.x_sol[:,1] if abs(self.x_sol[0,1] - v_ego) < 1. else np.full(N+1, v_ego)
+    v_plan = self.plan_speeds()
     margin = k * np.clip(v_plan**2 - lead_xv[:,1]**2, 0., None)
     d_stop = max(lead_xv[0,0] + get_stopped_equivalence_factor(lead_xv[0,1]) - STOP_DISTANCE, 0.1)
     margin *= np.interp(lead_xv[0,1], APPROACH_V_LEAD_BP, [1., 0.]) * np.interp(v_ego**2 / (2 * d_stop), APPROACH_DECEL_BP, [1., 0.]) * \
@@ -395,9 +434,48 @@ class LongitudinalMpc:
     self.approach_margin_last[idx] = applied
     return margin * (applied / target) if target > 1e-3 else np.zeros(N+1)
 
+  def traffic_mode_launch_shift(self, lead):
+    """Traffic Mode: how much farther to put leadOne's obstacle, from a stop behind it until the truck has moved off"""
+    track = lead.radarTrackId if self.traffic_mode and lead is not None and lead.present and lead.radar else -1
+    if track != self.launch_shift_track:
+      # Traffic Mode off, no radar lead, or another car: none until the truck stops behind this one
+      self.launch_shift = 0.
+      self.launch_shift_track = track
+      self.launch_shift_gap = None
+    if track == -1:
+      return 0.
+    v_ego = self.x0[1]
+    if v_ego < TRAFFIC_MODE_LAUNCH_SHIFT_V_EGO_BP[0]:
+      if self.launch_shift_gap is None or self.launch_shift_travel > 0.:
+        # a new stop behind this car
+        self.launch_shift_gap = float(lead.dRel)
+        self.launch_shift_travel = 0.
+      # the closest it comes while stopped: the truck can still roll a little once its speed reads 0
+      self.launch_shift_gap = min(self.launch_shift_gap, float(lead.dRel))
+      self.launch_shift = min(self.launch_shift_room(), self.launch_shift + TRAFFIC_MODE_LAUNCH_SHIFT_RATE * self.dt)
+    elif self.launch_shift_gap is not None:
+      # moving off: only comes down, spent by the truck's own travel and faded out with the plan's speed
+      self.launch_shift_travel += v_ego * self.dt
+      fade = float(np.interp(v_ego, TRAFFIC_MODE_LAUNCH_SHIFT_V_EGO_BP, [1., 0.]))
+      self.launch_shift = min(self.launch_shift, max(self.launch_shift_room() - self.launch_shift_travel, 0.) * fade)
+      if fade == 0.:
+        self.launch_shift_gap = None
+    return self.launch_shift
+
+  def launch_shift_room(self):
+    gap = self.launch_shift_gap
+    return float(np.clip(STOP_DISTANCE - TRAFFIC_MODE_LAUNCH_SHIFT_MARGIN - gap, 0., TRAFFIC_MODE_LAUNCH_SHIFT)) * \
+           float(np.interp(gap, TRAFFIC_MODE_LAUNCH_SHIFT_GAP_BP, [0., 1.]))
+
   def get_t_follow_offset_pct(self):
-    # Traffic Mode ignores the offset (the stored setting is untouched and applies again once it is off)
-    return 0. if self.traffic_mode else clip_t_follow_offset_pct(self.t_follow_offset_pct)
+    # Traffic Mode ignores the offset (the stored setting is untouched and applies again once it is off), except where a
+    # Rivian Following Distance with it is closer than Traffic Mode's curve (get_t_follow)
+    offset_pct = clip_t_follow_offset_pct(self.t_follow_offset_pct)
+    if self.traffic_mode:
+      level_closer = self.follow_t_base is not None and \
+                     self.follow_t_base * (1 + offset_pct / 100) < get_traffic_mode_T_FOLLOW(self.x0[1])
+      return offset_pct if level_closer else 0.
+    return offset_pct
 
   def get_t_follow(self, personality=log.LongitudinalPersonality.standard):
     if self.follow_t_base is not None:
@@ -415,14 +493,21 @@ class LongitudinalMpc:
     t_follow = self.get_t_follow(personality)
     self.t_follow = t_follow
 
-    lead_xv_0 = self.process_lead(radarstate.leadOne)
+    lead_xv_0 = self.process_lead(radarstate.leadOne, self.a_lead_fast)
     lead_xv_1 = self.process_lead(radarstate.leadTwo)
 
     # To estimate a safe distance from a moving lead, we calculate how much stopping
     # distance that lead needs as a minimum. We can add that to the current distance
     # and then treat that as a stopped car/obstacle at this new distance.
-    lead_0_obstacle = lead_xv_0[:,0] + get_stopped_equivalence_factor(lead_xv_0[:,1]) - self.approach_margin(0, radarstate.leadOne, lead_xv_0)
-    lead_1_obstacle = lead_xv_1[:,0] + get_stopped_equivalence_factor(lead_xv_1[:,1]) - self.approach_margin(1, radarstate.leadTwo, lead_xv_1)
+    launch_shift = self.traffic_mode_launch_shift(radarstate.leadOne)
+    lead_two = radarstate.leadTwo
+    # leadTwo gets it only while it is leadOne's own radar track
+    launch_shift_two = launch_shift if launch_shift > 0. and lead_two.present and lead_two.radar and \
+                       lead_two.radarTrackId == self.launch_shift_track else 0.
+    lead_0_obstacle = lead_xv_0[:,0] + get_stopped_equivalence_factor(lead_xv_0[:,1]) - self.approach_margin(0, radarstate.leadOne, lead_xv_0) + \
+                      launch_shift
+    lead_1_obstacle = lead_xv_1[:,0] + get_stopped_equivalence_factor(lead_xv_1[:,1]) - self.approach_margin(1, radarstate.leadTwo, lead_xv_1) + \
+                      launch_shift_two
 
     x_obstacles = np.column_stack([lead_0_obstacle, lead_1_obstacle])
     self.source = MPC_SOURCES[np.argmin(x_obstacles[0])]
@@ -440,6 +525,8 @@ class LongitudinalMpc:
     self.params[:,5] = LEAD_DANGER_FACTOR
 
     self.run()
+    # on the lead's own predicted path (with the fast estimate of its acceleration when that is in use), not its obstacle
+    # (Traffic Mode's launch shift moves that)
     if (np.any(lead_xv_0[FCW_IDXS,0] - self.x_sol[FCW_IDXS,0] < CRASH_DISTANCE) and
             radarstate.leadOne.modelProb > 0.9):
       self.crash_cnt += 1

@@ -39,6 +39,11 @@ LAUNCH_CAP_BP = [4., 12.]
 LAUNCH_CAP_AGGRESSIVE = 1.4
 LAUNCH_CAP_STANDARD = 1.2
 LAUNCH_CAP_RELAXED = 1.0
+# Traffic Mode: gentler acceleration where it follows closer, TRAFFIC_MODE_ACCEL_CAP up to 30 mph, rising to the request
+# limit (no cap) by 40 mph. After Keep Up With Traffic, so that can't lift the cruise accel past it, and the cruise candidate
+# is always in the min() of the planner's candidates, so it caps the planner's output too. A min: it never raises a lower cap
+TRAFFIC_MODE_ACCEL_CAP = 1.5                # m/s^2
+TRAFFIC_MODE_ACCEL_CAP_BP = [13.41, 17.88]  # m/s
 CONTROL_N_T_IDX = ModelConstants.T_IDXS[:CONTROL_N]
 ALLOW_THROTTLE_THRESHOLD = 0.4
 MIN_ALLOW_THROTTLE_SPEED = 2.5
@@ -69,7 +74,7 @@ def get_coast_accel(pitch):
   return np.sin(pitch) * -5.65 - 0.3  # fitted from data using xx/projects/allow_throttle/compute_coast_accel.py
 
 def get_cruise_accel(e2e, v_cruise, v_ego, a_cruise_prev, angle_steers, CP, dt, accel_coast, allow_throttle, follow_share=0.,
-                     throttle_scale=1., personality=None):
+                     throttle_scale=1., personality=None, traffic_mode=False):
   if personality is None:
     max_accel = ACCEL_MAX if e2e else get_max_accel(v_ego, follow_share)
   else:
@@ -90,6 +95,10 @@ def get_cruise_accel(e2e, v_cruise, v_ego, a_cruise_prev, angle_steers, CP, dt, 
       clipped_accel_coast = max(accel_coast, ACCEL_MIN)
       coast_limit = np.interp(v_ego, [MIN_ALLOW_THROTTLE_SPEED, MIN_ALLOW_THROTTLE_SPEED*2], [max_accel, clipped_accel_coast])
       max_accel = min(max_accel, coast_limit)
+
+  # Traffic Mode's cap, on top of all the above including Keep Up With Traffic's
+  if traffic_mode:
+    max_accel = min(max_accel, float(np.interp(v_ego, TRAFFIC_MODE_ACCEL_CAP_BP, [TRAFFIC_MODE_ACCEL_CAP, ACCEL_MAX])))
 
   # Curve Speed Control's throttle-fade interlock (lateral_load_governor.py): no added throttle while the steering is near
   # or at its lateral limit. Every other candidate only lowers the target, so this caps the planner's throttle, through the
@@ -201,7 +210,7 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
                                      self.a_cruise, steer_angle_without_offset, self.CP, self.dt,
                                      accel_coast, self.allow_throttle,
                                      self.keep_pace(sm['radarState'].leadOne, sm['selfdriveState'].personality, v_ego),
-                                     self.scc.governor.throttle_scale(), sm['selfdriveState'].personality)
+                                     self.scc.governor.throttle_scale(), sm['selfdriveState'].personality, self.mpc.traffic_mode)
     cruise_should_stop = should_stop(v_ego, self.a_cruise)
 
     # Behind a car that has stopped or is stopping, the lead planner's braking beyond one even stop at the gap eases off
