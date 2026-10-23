@@ -793,7 +793,7 @@
               "key": "RivianLaunchAssist",
               "widget": "toggle",
               "title": "Launch Assist",
-              "description": "Starts the truck moving sooner when the car ahead pulls away from a stop. Once the truck has been stopped behind a radar-tracked car for a second and that car starts moving away, sunnypilot briefly raises its request to 0.5 m/s\u00b2 (under a second, ending sooner once the truck matches the car's speed) to get past the truck's standstill dead zone, then eases back to the normal plan. Once moving it accelerates as before. Because it starts sooner, the truck may also follow a car that only inches forward and stops. Rivian with sunnypilot longitudinal only. Can be changed while driving.",
+              "description": "A quicker start in the first second of a launch from a stop. Once the truck has been stopped behind a radar-tracked car for a second and that car pulls away, sunnypilot asks for at least as much as that car pulls away with, from 0.5 m/s\u00b2 up to the Launch Assist Strength limit, until the truck is under way (its speed reads about 0.3 m/s), and then eases back into the normal plan. It eases back sooner once the plan asks for as much, when that car stops pulling away, or when the radar loses that car or switches to another, and it never takes the truck faster than that car. With no car ahead it adds a smaller lift for up to 2 seconds, never more than the driving model plans for the next second. sunnypilot's own stop always wins; a stop request shorter than 0.1 s while that car keeps pulling away only pauses it. Behind a car it doesn't lift a launch in Traffic Mode, which moves off sooner on its own when that car creeps away, or after stopping closer than 3.5 m (11 ft) to it. With Traffic Mode off, behind a car that pulls away briskly, the truck reaches 2 mph about 0.15-0.2 s sooner than before; if that car then stops at once, the truck can end up a little closer to it, usually about 0.2 m and up to about 0.7 m. Rivian with sunnypilot longitudinal only. Can be changed while driving.",
               "visibility": [
                 {
                   "type": "capability",
@@ -805,6 +805,41 @@
                 {
                   "type": "capability",
                   "field": "has_longitudinal_control",
+                  "equals": true
+                }
+              ]
+            },
+            {
+              "key": "RivianLaunchAssistBoost",
+              "widget": "multiple_button",
+              "title": "Launch Assist Strength",
+              "description": "How hard Launch Assist may pull. Strong: up to 0.8, 0.7 or 0.6 m/s\u00b2 behind a car pulling away (Aggressive, Standard, Relaxed) and 0.6, 0.5 or 0.4 with no car ahead. Gentle: 0.1 m/s\u00b2 less in each case, a softer start that gets going up to about 0.1 s later behind a car that pulls away briskly and the same behind a slower one. With Traffic Mode on it only changes launches with no car ahead. Only with Launch Assist on. Rivian with sunnypilot longitudinal only. Can be changed while driving.",
+              "options": [
+                {
+                  "value": 0,
+                  "label": "Gentle"
+                },
+                {
+                  "value": 1,
+                  "label": "Strong"
+                }
+              ],
+              "visibility": [
+                {
+                  "type": "capability",
+                  "field": "brand",
+                  "equals": "rivian"
+                }
+              ],
+              "enablement": [
+                {
+                  "type": "capability",
+                  "field": "has_longitudinal_control",
+                  "equals": true
+                },
+                {
+                  "type": "param",
+                  "key": "RivianLaunchAssist",
                   "equals": true
                 }
               ]
